@@ -1,5 +1,10 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Product Design
+
+- [Domain and data model](docs/domain-and-data-model.md) separates the app's training concepts from the Supabase/Postgres storage model.
+- [Domain ER diagram](docs/domain-er-diagram.md) shows the conceptual relationships between training entities and events.
+
 ## Getting Started
 
 First, run the development server:
