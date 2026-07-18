@@ -2,6 +2,8 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Product Design
 
+- [Tech stack decisions](docs/tech-stack-decisions.md) records the explicit
+  framework, database, API, UI, charting, deployment, and testing choices.
 - [Domain and data model](docs/domain-and-data-model.md) separates the app's training concepts from the Supabase/Postgres storage model.
 - [Domain ER diagram](docs/domain-er-diagram.md) shows the conceptual relationships between training entities and events.
 - [Database ER diagram](docs/database-er-diagram.md) shows the proposed Supabase/Postgres table relationships.
