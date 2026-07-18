@@ -3,6 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { calculateProgressionDecision } from "@/lib/training/progression";
+import {
+  buildChartDataPoints,
+  completedAllPrescribedReps,
+  getExerciseStatusFromSets,
+  getNextTemplateId,
+  inferSetStatus,
+} from "@/lib/training/workout-rules";
 import type {
   ActionResult,
   ApplyDeloadInput,
@@ -476,12 +483,17 @@ async function advanceNextTemplate(
     throw error ?? new Error("No workout templates found.");
   }
 
-  const index = templates.findIndex((template) => template.id === completedTemplateId);
-  const nextTemplate = templates[(index + 1) % templates.length] ?? templates[0];
+  const nextTemplateId = getNextTemplateId(
+    templates.map((template) => ({
+      id: template.id,
+      sortOrder: template.sort_order,
+    })),
+    completedTemplateId,
+  );
 
   const { error: updateError } = await supabase
     .from("program_enrollments")
-    .update({ next_template_id: nextTemplate.id })
+    .update({ next_template_id: nextTemplateId })
     .eq("id", enrollment.id);
 
   if (updateError) {
@@ -779,9 +791,11 @@ export async function updateSetResult(
       throw currentSetError;
     }
 
-    const status =
-      input.status ??
-      (completedReps >= currentSet.target_reps ? "completed" : "failed");
+    const status = inferSetStatus(
+      completedReps,
+      currentSet.target_reps,
+      input.status,
+    );
 
     const { data: set, error: setError } = await supabase
       .from("workout_sets")
@@ -809,17 +823,13 @@ export async function updateSetResult(
       throw setsError;
     }
 
-    const allFinished = sets.every((row) =>
-      ["completed", "failed", "skipped"].includes(row.status),
+    const exerciseStatus = getExerciseStatusFromSets(
+      sets.map((set) => ({
+        status: set.status,
+        completedReps: set.completed_reps,
+        targetReps: set.target_reps,
+      })),
     );
-    const allSuccessful =
-      allFinished &&
-      sets.every((row) => row.status === "completed" && row.completed_reps >= row.target_reps);
-    const exerciseStatus: WorkoutExerciseStatus = allSuccessful
-      ? "completed"
-      : allFinished
-        ? "failed"
-        : "active";
 
     const { data: workoutExercise, error: workoutExerciseError } =
       await supabase
@@ -971,11 +981,13 @@ async function applyProgressionForExercise(
     throw setsError;
   }
 
-  const completedAllReps =
-    sets.length > 0 &&
-    sets.every(
-      (set) => set.status === "completed" && set.completed_reps >= set.target_reps,
-    );
+  const completedAllReps = completedAllPrescribedReps(
+    sets.map((set) => ({
+      status: set.status,
+      completedReps: set.completed_reps,
+      targetReps: set.target_reps,
+    })),
+  );
 
   const { data: state, error: stateError } = await supabase
     .from("exercise_training_states")
@@ -1283,22 +1295,7 @@ export async function fetchChartData(): Promise<ActionResult<ChartDataPoint[]>> 
     for (const session of sessions) {
       const workout = await getWorkoutView(supabase, session.id);
 
-      for (const exercise of workout.exercises) {
-        const totalReps = exercise.sets.reduce(
-          (sum, set) => sum + set.completedReps,
-          0,
-        );
-
-        points.push({
-          date: session.completed_at,
-          exerciseId: exercise.exerciseId,
-          exerciseName: exercise.exerciseName,
-          load: exercise.plannedLoad,
-          totalReps,
-          volume: exercise.plannedLoad * totalReps,
-          unit: exercise.unit,
-        });
-      }
+      points.push(...buildChartDataPoints(session.completed_at, workout.exercises));
     }
 
     return success(points);
