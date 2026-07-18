@@ -84,14 +84,17 @@ A real training event for an athlete.
 Responsibilities:
 
 - Represents one performed or planned workout occurrence.
-- Has a lifecycle: planned, active, completed, skipped, or abandoned.
+- Has a lifecycle: planned, in progress, paused, completed, skipped, or discarded.
 - Contains exercise performances.
 - Can produce progression decisions after completion.
+- Preserves partially logged results as a resumable draft.
 
 Important distinction:
 
 - A workout template says what should happen.
 - A workout session records what actually happened.
+- The set is the autosave boundary. A workout is not final until completion, but
+  saved set results survive refreshes, browser closes, and navigation.
 
 #### Exercise Performance
 
@@ -403,14 +406,26 @@ Columns:
 - `scheduled_for date`
 - `started_at timestamptz`
 - `completed_at timestamptz`
+- `paused_at timestamptz`
+- `rest_started_at timestamptz`
+- `target_rest_seconds integer`
+- `rest_set_id uuid references workout_sets(id) on delete set null`
 - `notes text`
 - `created_at timestamptz not null default now()`
 - `updated_at timestamptz not null default now()`
 
 Constraints:
 
-- `status in ('planned', 'active', 'completed', 'skipped', 'abandoned')`.
+- `status in ('planned', 'in_progress', 'paused', 'completed', 'skipped', 'discarded')`.
 - `completed_at is not null` when `status = 'completed'`.
+- `target_rest_seconds > 0` when present.
+
+Notes:
+
+- V1 does not include offline-first sync. The durable guarantee begins once the
+  server action for a set result succeeds.
+- Rest countdowns should be derived from `rest_started_at` plus
+  `target_rest_seconds`, not from an in-memory timer.
 
 #### `workout_exercises`
 
@@ -553,7 +568,13 @@ The domain and database models should differ in these places:
 ## Suggested TypeScript Domain Shape
 
 ```ts
-type WorkoutStatus = "planned" | "active" | "completed" | "skipped" | "abandoned";
+type WorkoutStatus =
+  | "planned"
+  | "in_progress"
+  | "paused"
+  | "completed"
+  | "skipped"
+  | "discarded";
 type SetStatus = "planned" | "completed" | "failed" | "skipped";
 type ProgressionDecisionKind = "increase" | "repeat" | "deload" | "hold";
 

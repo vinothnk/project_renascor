@@ -1,10 +1,11 @@
 export type LoadUnit = "kg" | "lb";
 export type WorkoutStatus =
   | "planned"
-  | "active"
+  | "in_progress"
+  | "paused"
   | "completed"
   | "skipped"
-  | "abandoned";
+  | "discarded";
 export type WorkoutExerciseStatus =
   | "planned"
   | "active"
@@ -24,6 +25,13 @@ export type SetResultInput = {
   status?: SetStatus;
   failureReason?: string;
   notes?: string;
+  targetRestSeconds?: number;
+};
+
+export type RestTimerInput = {
+  workoutId: string;
+  setId?: string;
+  targetRestSeconds: number;
 };
 
 export type CreateWorkoutInput = {
@@ -77,6 +85,10 @@ export type WorkoutView = {
   scheduledFor: string | null;
   startedAt: string | null;
   completedAt: string | null;
+  pausedAt: string | null;
+  restStartedAt: string | null;
+  targetRestSeconds: number | null;
+  restSetId: string | null;
   notes: string | null;
   exercises: WorkoutExerciseView[];
 };

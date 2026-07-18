@@ -11,10 +11,12 @@ import type {
   LoadUnit,
   NextWorkoutPreview,
   ProgressionDecision,
+  RestTimerInput,
   SetResultInput,
   SetStatus,
   UserSettingsInput,
   WorkoutExerciseStatus,
+  WorkoutStatus,
   WorkoutView,
 } from "@/lib/training/types";
 
@@ -71,6 +73,10 @@ type WorkoutSessionRow = {
   scheduled_for: string | null;
   started_at: string | null;
   completed_at: string | null;
+  paused_at: string | null;
+  rest_started_at: string | null;
+  target_rest_seconds: number | null;
+  rest_set_id: string | null;
   notes: string | null;
 };
 
@@ -122,6 +128,26 @@ function asExerciseStatus(status: string): WorkoutExerciseStatus {
   )
     ? (status as WorkoutExerciseStatus)
     : "planned";
+}
+
+function asWorkoutStatus(status: string): WorkoutStatus {
+  if (status === "active") {
+    return "in_progress";
+  }
+
+  if (status === "abandoned") {
+    return "discarded";
+  }
+
+  return ["planned", "in_progress", "paused", "completed", "skipped", "discarded"].includes(
+    status,
+  )
+    ? (status as WorkoutStatus)
+    : "planned";
+}
+
+function normalizeRestSeconds(seconds: number) {
+  return Math.max(1, Math.trunc(seconds));
 }
 
 async function getUser(supabase: SupabaseClient): Promise<User> {
@@ -322,7 +348,7 @@ async function getWorkoutView(
   const { data: session, error: sessionError } = await supabase
     .from("workout_sessions")
     .select(
-      "id, program_enrollment_id, workout_template_id, status, scheduled_for, started_at, completed_at, notes",
+      "id, program_enrollment_id, workout_template_id, status, scheduled_for, started_at, completed_at, paused_at, rest_started_at, target_rest_seconds, rest_set_id, notes",
     )
     .eq("id", workoutId)
     .single<WorkoutSessionRow>();
@@ -371,12 +397,16 @@ async function getWorkoutView(
 
   return {
     id: session.id,
-    status: session.status as WorkoutView["status"],
+    status: asWorkoutStatus(session.status),
     templateId: session.workout_template_id,
     templateName: template?.name ?? null,
     scheduledFor: session.scheduled_for,
     startedAt: session.started_at,
     completedAt: session.completed_at,
+    pausedAt: session.paused_at,
+    restStartedAt: session.rest_started_at,
+    targetRestSeconds: session.target_rest_seconds,
+    restSetId: session.rest_set_id,
     notes: session.notes,
     exercises: workoutExercises.map((workoutExercise) => ({
       id: workoutExercise.id,
@@ -404,6 +434,26 @@ async function getWorkoutView(
         })),
     })),
   };
+}
+
+async function getOpenWorkoutForUser(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<WorkoutView | null> {
+  const { data, error } = await supabase
+    .from("workout_sessions")
+    .select("id")
+    .eq("user_id", userId)
+    .in("status", ["in_progress", "paused", "active"])
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ id: string }>();
+
+  if (error) {
+    throw error;
+  }
+
+  return data ? getWorkoutView(supabase, data.id) : null;
 }
 
 async function advanceNextTemplate(
@@ -445,6 +495,12 @@ export async function createWorkout(
   try {
     const supabase = await createClient();
     const user = await getUser(supabase);
+    const openWorkout = await getOpenWorkoutForUser(supabase, user.id);
+
+    if (openWorkout) {
+      return success(openWorkout);
+    }
+
     const enrollment = await requireActiveEnrollment(supabase, user.id);
     const template = await getTemplate(supabase, enrollment, input.templateId);
     const templateExercises = await getTemplateExercises(supabase, template.id);
@@ -460,7 +516,8 @@ export async function createWorkout(
         program_enrollment_id: enrollment.id,
         workout_template_id: template.id,
         scheduled_for: input.scheduledFor ?? null,
-        status: "planned",
+        status: "in_progress",
+        started_at: new Date().toISOString(),
       })
       .select("id")
       .single<{ id: string }>();
@@ -537,12 +594,27 @@ export async function startWorkoutSession(
   try {
     const supabase = await createClient();
     await getUser(supabase);
+    const now = new Date().toISOString();
+
+    const { data: current, error: currentError } = await supabase
+      .from("workout_sessions")
+      .select("started_at")
+      .eq("id", workoutId)
+      .single<{ started_at: string | null }>();
+
+    if (currentError) {
+      throw currentError;
+    }
 
     const { error } = await supabase
       .from("workout_sessions")
-      .update({ status: "active", started_at: new Date().toISOString() })
+      .update({
+        status: "in_progress",
+        started_at: current.started_at ?? now,
+        paused_at: null,
+      })
       .eq("id", workoutId)
-      .in("status", ["planned", "active"]);
+      .in("status", ["planned", "in_progress", "paused", "active"]);
 
     if (error) {
       throw error;
@@ -552,6 +624,140 @@ export async function startWorkoutSession(
     return success(await getWorkoutView(supabase, workoutId));
   } catch (error) {
     return failure(error instanceof Error ? error.message : "Could not start workout.");
+  }
+}
+
+export async function fetchOpenWorkout(): Promise<ActionResult<WorkoutView | null>> {
+  try {
+    const supabase = await createClient();
+    const user = await getUser(supabase);
+
+    return success(await getOpenWorkoutForUser(supabase, user.id));
+  } catch (error) {
+    return failure(
+      error instanceof Error ? error.message : "Could not fetch active workout.",
+    );
+  }
+}
+
+export async function pauseWorkoutSession(
+  workoutId: string,
+): Promise<ActionResult<WorkoutView>> {
+  try {
+    const supabase = await createClient();
+    await getUser(supabase);
+
+    const { error } = await supabase
+      .from("workout_sessions")
+      .update({
+        status: "paused",
+        paused_at: new Date().toISOString(),
+        rest_started_at: null,
+        target_rest_seconds: null,
+        rest_set_id: null,
+      })
+      .eq("id", workoutId)
+      .in("status", ["in_progress", "active"]);
+
+    if (error) {
+      throw error;
+    }
+
+    revalidatePath("/dashboard");
+    return success(await getWorkoutView(supabase, workoutId));
+  } catch (error) {
+    return failure(error instanceof Error ? error.message : "Could not pause workout.");
+  }
+}
+
+export async function discardWorkoutSession(
+  workoutId: string,
+): Promise<ActionResult<WorkoutView>> {
+  try {
+    const supabase = await createClient();
+    await getUser(supabase);
+
+    const { error } = await supabase
+      .from("workout_sessions")
+      .update({
+        status: "discarded",
+        paused_at: null,
+        rest_started_at: null,
+        target_rest_seconds: null,
+        rest_set_id: null,
+      })
+      .eq("id", workoutId)
+      .in("status", ["planned", "in_progress", "paused", "active", "abandoned"]);
+
+    if (error) {
+      throw error;
+    }
+
+    revalidatePath("/dashboard");
+    return success(await getWorkoutView(supabase, workoutId));
+  } catch (error) {
+    return failure(error instanceof Error ? error.message : "Could not discard workout.");
+  }
+}
+
+export async function startRestTimer(
+  input: RestTimerInput,
+): Promise<ActionResult<WorkoutView>> {
+  try {
+    const supabase = await createClient();
+    await getUser(supabase);
+
+    const { error } = await supabase
+      .from("workout_sessions")
+      .update({
+        status: "in_progress",
+        paused_at: null,
+        rest_started_at: new Date().toISOString(),
+        target_rest_seconds: normalizeRestSeconds(input.targetRestSeconds),
+        rest_set_id: input.setId ?? null,
+      })
+      .eq("id", input.workoutId)
+      .in("status", ["planned", "in_progress", "paused", "active"]);
+
+    if (error) {
+      throw error;
+    }
+
+    revalidatePath("/dashboard");
+    return success(await getWorkoutView(supabase, input.workoutId));
+  } catch (error) {
+    return failure(
+      error instanceof Error ? error.message : "Could not start rest timer.",
+    );
+  }
+}
+
+export async function clearRestTimer(
+  workoutId: string,
+): Promise<ActionResult<WorkoutView>> {
+  try {
+    const supabase = await createClient();
+    await getUser(supabase);
+
+    const { error } = await supabase
+      .from("workout_sessions")
+      .update({
+        rest_started_at: null,
+        target_rest_seconds: null,
+        rest_set_id: null,
+      })
+      .eq("id", workoutId);
+
+    if (error) {
+      throw error;
+    }
+
+    revalidatePath("/dashboard");
+    return success(await getWorkoutView(supabase, workoutId));
+  } catch (error) {
+    return failure(
+      error instanceof Error ? error.message : "Could not clear rest timer.",
+    );
   }
 }
 
@@ -625,6 +831,41 @@ export async function updateSetResult(
 
     if (workoutExerciseError) {
       throw workoutExerciseError;
+    }
+
+    const { data: currentSession, error: currentSessionError } = await supabase
+      .from("workout_sessions")
+      .select("started_at")
+      .eq("id", workoutExercise.workout_session_id)
+      .single<{ started_at: string | null }>();
+
+    if (currentSessionError) {
+      throw currentSessionError;
+    }
+
+    const now = new Date().toISOString();
+    const restPatch =
+      input.targetRestSeconds !== undefined
+        ? {
+            rest_started_at: now,
+            target_rest_seconds: normalizeRestSeconds(input.targetRestSeconds),
+            rest_set_id: input.setId,
+          }
+        : {};
+
+    const { error: sessionError } = await supabase
+      .from("workout_sessions")
+      .update({
+        status: "in_progress",
+        started_at: currentSession.started_at ?? now,
+        paused_at: null,
+        ...restPatch,
+      })
+      .eq("id", workoutExercise.workout_session_id)
+      .in("status", ["planned", "in_progress", "paused", "active"]);
+
+    if (sessionError) {
+      throw sessionError;
     }
 
     revalidatePath("/dashboard");
@@ -860,7 +1101,14 @@ export async function completeWorkout(
 
     const { data: session, error: sessionError } = await supabase
       .from("workout_sessions")
-      .update({ status: "completed", completed_at: new Date().toISOString() })
+      .update({
+        status: "completed",
+        completed_at: new Date().toISOString(),
+        paused_at: null,
+        rest_started_at: null,
+        target_rest_seconds: null,
+        rest_set_id: null,
+      })
       .eq("id", workoutId)
       .select("program_enrollment_id, workout_template_id")
       .single<{ program_enrollment_id: string; workout_template_id: string | null }>();
