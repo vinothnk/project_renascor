@@ -4,6 +4,12 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 - [Tech stack decisions](docs/tech-stack-decisions.md) records the explicit
   framework, database, API, UI, charting, deployment, and testing choices.
+- [Deployment and environment plan](docs/deployment-and-environment-plan.md)
+  defines local setup, Supabase projects, environment variables, Vercel
+  deployment, migrations, seed data, and backup/export expectations.
+- [Analytics and observability plan](docs/observability-plan.md) defines the
+  V1 logging, debugging, failed-operation inspection, and deployment health
+  checks.
 - [Domain and data model](docs/domain-and-data-model.md) separates the app's training concepts from the Supabase/Postgres storage model.
 - [Domain ER diagram](docs/domain-er-diagram.md) shows the conceptual relationships between training entities and events.
 - [Database ER diagram](docs/database-er-diagram.md) shows the proposed Supabase/Postgres table relationships.
