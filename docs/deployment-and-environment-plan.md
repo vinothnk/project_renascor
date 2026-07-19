@@ -156,13 +156,15 @@ Use the V1 baseline in [Analytics and observability plan](observability-plan.md)
 
 - Write structured server-side logs for unexpected server action and route
   handler failures.
+- Use `GET /api/health` to confirm required Supabase configuration and database
+  reachability for a deployed environment.
 - Use Vercel runtime logs as the first place to inspect deployed application
   errors.
 - Use Supabase Auth and Postgres logs to inspect failed authentication,
   database, and RLS operations.
-- Treat a deployment as healthy only after the app loads, authenticated
-  dashboard access works, core workout flows pass, and no new runtime errors
-  appear during the post-deploy smoke check.
+- Treat a deployment as healthy only after `/api/health` returns `200`, the app
+  loads, authenticated dashboard access works, core workout flows pass, and no
+  new runtime errors appear during the post-deploy smoke check.
 
 Defer external error tracking, log drains, and synthetic uptime checks until
 production usage needs alerting or longer log retention.

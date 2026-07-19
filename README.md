@@ -57,3 +57,10 @@ pnpm test:rls
 
 The service-role key is used only for test setup and cleanup. Application code
 must continue using the publishable key.
+
+## Health Check
+
+Use `GET /api/health` after deployment to verify required Supabase
+configuration and basic database reachability. A healthy deployment returns
+HTTP `200` with `status: "ok"`; degraded checks return HTTP `503` and should be
+inspected in Vercel runtime logs and Supabase logs.

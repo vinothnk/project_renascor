@@ -14,6 +14,7 @@ without adding a heavy monitoring stack before the product needs one.
 | Usage analytics | Vercel Web Analytics when production traffic begins |
 | Performance health | Vercel Speed Insights when production traffic begins |
 | Database/API inspection | Vercel runtime logs plus Supabase dashboard logs and table/query checks |
+| Health endpoint | `GET /api/health` for config and Supabase reachability checks |
 | External error tracker | Defer until real production usage or recurring unknown failures |
 
 Do not log passwords, tokens, full email addresses, Supabase service role keys,
@@ -139,9 +140,33 @@ vercel logs <deployment-url> --follow
 
 ## Deployment Health
 
+`GET /api/health` returns a small JSON health payload for deployment smoke
+checks and uptime monitors. It verifies required Supabase environment variables
+and performs a lightweight read against Supabase reference data using the
+publishable key only.
+
+Healthy response:
+
+```json
+{
+  "status": "ok",
+  "service": "project-renascor",
+  "timestamp": "2026-07-19T00:00:00.000Z",
+  "checks": {
+    "env": { "status": "ok" },
+    "supabase": { "status": "ok", "durationMs": 42 }
+  }
+}
+```
+
+If any check fails, the route returns HTTP `503` with `status: "degraded"` and
+logs a structured `health.supabase.failed` event for Supabase query failures.
+The response must never include secrets, tokens, cookies, or user data.
+
 A deployed app is considered healthy when:
 
 - Vercel deployment status is ready.
+- `GET /api/health` returns HTTP `200` with `status: "ok"`.
 - The latest production deployment has no new runtime errors after initial
   smoke testing.
 - Signup/login works against the target Supabase project.
@@ -153,12 +178,13 @@ A deployed app is considered healthy when:
 Post-deploy smoke check:
 
 1. Open the production URL.
-2. Sign up or log in with a test account for that environment.
-3. Confirm `/dashboard` loads.
-4. Create or resume a workout.
-5. Update a set and complete or discard the workout.
-6. Check Vercel runtime logs for new errors.
-7. Check Supabase Auth/Postgres logs if anything failed.
+2. Open `/api/health` and confirm HTTP `200` with `status: "ok"`.
+3. Sign up or log in with a test account for that environment.
+4. Confirm `/dashboard` loads.
+5. Create or resume a workout.
+6. Update a set and complete or discard the workout.
+7. Check Vercel runtime logs for new errors.
+8. Check Supabase Auth/Postgres logs if anything failed.
 
 ## Upgrade Path
 
