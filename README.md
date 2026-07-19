@@ -10,6 +10,9 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 - [Analytics and observability plan](docs/observability-plan.md) defines the
   V1 logging, debugging, failed-operation inspection, and deployment health
   checks.
+- [Feature map](docs/feature-map.md) defines V1 and deferred features, screens,
+  navigation, dependencies, permissions, data/action needs, UI states, and
+  acceptance criteria.
 - [Domain and data model](docs/domain-and-data-model.md) separates the app's training concepts from the Supabase/Postgres storage model.
 - [Domain ER diagram](docs/domain-er-diagram.md) shows the conceptual relationships between training entities and events.
 - [Database ER diagram](docs/database-er-diagram.md) shows the proposed Supabase/Postgres table relationships.
