@@ -40,6 +40,7 @@ erDiagram
   EXERCISES ||--o{ FAILURE_EVENTS : failure_for
 
   PROGRAM_ENROLLMENTS ||--o{ DELOAD_EVENTS : records
+  WORKOUT_EXERCISES ||--o{ DELOAD_EVENTS : creates
   EXERCISES ||--o{ DELOAD_EVENTS : deload_for
 
   PROGRAM_ENROLLMENTS ||--o{ PROGRESSION_DECISIONS : records
@@ -197,6 +198,7 @@ erDiagram
     uuid id PK
     uuid user_id FK
     uuid program_enrollment_id FK
+    uuid workout_exercise_id FK
     uuid exercise_id FK
     numeric from_load
     numeric to_load
@@ -228,4 +230,6 @@ erDiagram
 - `EXERCISE_TRAINING_STATES` is the current mutable state for next load and consecutive failures.
 - `WORKOUT_SESSIONS`, `WORKOUT_EXERCISES`, and `WORKOUT_SETS` are immutable historical facts once a workout is completed.
 - `FAILURE_EVENTS`, `DELOAD_EVENTS`, and `PROGRESSION_DECISIONS` preserve why the app changed or repeated a load.
+- Automatic `DELOAD_EVENTS` link back to `WORKOUT_EXERCISES` so deleting a
+  workout session removes the deload event it produced.
 - User-owned tables should have RLS policies using `auth.uid() = user_id`.

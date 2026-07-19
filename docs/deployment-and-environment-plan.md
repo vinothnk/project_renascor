@@ -106,7 +106,7 @@ Operational and test-only variables:
 
 | Variable | Scope | Used By | Notes |
 | --- | --- | --- | --- |
-| `SUPABASE_SERVICE_ROLE_KEY` | Server-only local/CI | `pnpm test:rls` | Never prefix with `NEXT_PUBLIC_`; never use in browser code |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-only local/CI/production | `pnpm test:rls`, account deletion action | Never prefix with `NEXT_PUBLIC_`; production is required only when self-service account deletion is enabled |
 | `RLS_TEST_USER_A_EMAIL` | Local/CI test | `pnpm test:rls` | Dedicated disposable test user |
 | `RLS_TEST_USER_B_EMAIL` | Local/CI test | `pnpm test:rls` | Dedicated disposable test user |
 | `RLS_TEST_USER_PASSWORD` | Local/CI test | `pnpm test:rls` | Dedicated disposable test password |
@@ -233,10 +233,35 @@ Minimum expectations:
 
 User-facing export expectations:
 
-- Plan for per-user workout history export before broad production usage.
-- Export formats should include a machine-readable format such as CSV or JSON.
+- Per-user JSON export is available from the dashboard.
+- Export formats should continue to include a machine-readable format such as
+  CSV or JSON as the product grows.
 - Exports must stay scoped to the authenticated user unless performed by a
   trusted admin workflow with an audit trail.
+
+## Data Deletion And Operational Audit
+
+Self-service deletion paths:
+
+- Delete one workout session from the dashboard history list.
+- Delete all training data while keeping the Supabase Auth account and profile.
+- Delete the account and app data when `SUPABASE_SERVICE_ROLE_KEY` is configured
+  on the server.
+
+Operational deletion process:
+
+1. Confirm the requester identity and the exact deletion scope.
+2. Export or back up affected production data first unless the requester
+   explicitly declines an export.
+3. Record who requested the deletion, who performed it, when it happened, the
+   target user id, and the deletion scope in an operations log outside the
+   repository.
+4. Use the narrowest mechanism possible: authenticated self-service action for
+   user-owned data, service-role admin workflow only for Auth account deletion
+   or break-glass support.
+5. Verify removal by checking user-scoped tables and Supabase Auth after the
+   operation.
+6. Delete temporary exports according to the recorded retention date.
 
 ## Release Checklist
 

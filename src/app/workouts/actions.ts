@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { logError, logInfo } from "@/lib/observability";
 import { createClient } from "@/lib/supabase/server";
 import { calculateProgressionDecision } from "@/lib/training/progression";
 import {
@@ -117,6 +118,22 @@ function success<T>(data: T): ActionResult<T> {
 
 function failure<T>(error: string): ActionResult<T> {
   return { ok: false, error };
+}
+
+function actionFailure<T>(
+  error: unknown,
+  event: string,
+  operation: string,
+  fallback: string,
+  context: Record<string, string | number | boolean | null | undefined> = {},
+): ActionResult<T> {
+  logError(event, error, {
+    route: "/dashboard",
+    operation,
+    ...context,
+  });
+
+  return failure(error instanceof Error ? error.message : fallback);
 }
 
 function toNumber(value: number | string) {
@@ -594,9 +611,15 @@ export async function createWorkout(
     }
 
     revalidatePath("/dashboard");
+    logInfo("workout.create.completed", {
+      route: "/dashboard",
+      operation: "createWorkout",
+      userId: user.id,
+      workoutId: session.id,
+    });
     return success(await getWorkoutView(supabase, session.id));
   } catch (error) {
-    return failure(error instanceof Error ? error.message : "Could not create workout.");
+    return actionFailure(error, "workout.create.failed", "createWorkout", "Could not create workout.");
   }
 }
 
@@ -633,9 +656,14 @@ export async function startWorkoutSession(
     }
 
     revalidatePath("/dashboard");
+    logInfo("workout.start.completed", {
+      route: "/dashboard",
+      operation: "startWorkoutSession",
+      workoutId,
+    });
     return success(await getWorkoutView(supabase, workoutId));
   } catch (error) {
-    return failure(error instanceof Error ? error.message : "Could not start workout.");
+    return actionFailure(error, "workout.start.failed", "startWorkoutSession", "Could not start workout.", { workoutId });
   }
 }
 
@@ -646,9 +674,7 @@ export async function fetchOpenWorkout(): Promise<ActionResult<WorkoutView | nul
 
     return success(await getOpenWorkoutForUser(supabase, user.id));
   } catch (error) {
-    return failure(
-      error instanceof Error ? error.message : "Could not fetch active workout.",
-    );
+    return actionFailure(error, "workout.open.fetch.failed", "fetchOpenWorkout", "Could not fetch active workout.");
   }
 }
 
@@ -676,9 +702,14 @@ export async function pauseWorkoutSession(
     }
 
     revalidatePath("/dashboard");
+    logInfo("workout.pause.completed", {
+      route: "/dashboard",
+      operation: "pauseWorkoutSession",
+      workoutId,
+    });
     return success(await getWorkoutView(supabase, workoutId));
   } catch (error) {
-    return failure(error instanceof Error ? error.message : "Could not pause workout.");
+    return actionFailure(error, "workout.pause.failed", "pauseWorkoutSession", "Could not pause workout.", { workoutId });
   }
 }
 
@@ -706,9 +737,14 @@ export async function discardWorkoutSession(
     }
 
     revalidatePath("/dashboard");
+    logInfo("workout.discard.completed", {
+      route: "/dashboard",
+      operation: "discardWorkoutSession",
+      workoutId,
+    });
     return success(await getWorkoutView(supabase, workoutId));
   } catch (error) {
-    return failure(error instanceof Error ? error.message : "Could not discard workout.");
+    return actionFailure(error, "workout.discard.failed", "discardWorkoutSession", "Could not discard workout.", { workoutId });
   }
 }
 
@@ -738,9 +774,7 @@ export async function startRestTimer(
     revalidatePath("/dashboard");
     return success(await getWorkoutView(supabase, input.workoutId));
   } catch (error) {
-    return failure(
-      error instanceof Error ? error.message : "Could not start rest timer.",
-    );
+    return actionFailure(error, "workout.rest.start.failed", "startRestTimer", "Could not start rest timer.", { workoutId: input.workoutId });
   }
 }
 
@@ -767,9 +801,7 @@ export async function clearRestTimer(
     revalidatePath("/dashboard");
     return success(await getWorkoutView(supabase, workoutId));
   } catch (error) {
-    return failure(
-      error instanceof Error ? error.message : "Could not clear rest timer.",
-    );
+    return actionFailure(error, "workout.rest.clear.failed", "clearRestTimer", "Could not clear rest timer.", { workoutId });
   }
 }
 
@@ -881,7 +913,7 @@ export async function updateSetResult(
     revalidatePath("/dashboard");
     return success(await getWorkoutView(supabase, workoutExercise.workout_session_id));
   } catch (error) {
-    return failure(error instanceof Error ? error.message : "Could not update set.");
+    return actionFailure(error, "workout.set.update.failed", "updateSetResult", "Could not update set.", { setId: input.setId });
   }
 }
 
@@ -899,11 +931,16 @@ export async function applyProgression(
     );
 
     revalidatePath("/dashboard");
+    logInfo("workout.progression.applied", {
+      route: "/dashboard",
+      operation: "applyProgression",
+      userId: user.id,
+      workoutExerciseId,
+      decision: decision.decision,
+    });
     return success(decision);
   } catch (error) {
-    return failure(
-      error instanceof Error ? error.message : "Could not apply progression.",
-    );
+    return actionFailure(error, "workout.progression.failed", "applyProgression", "Could not apply progression.", { workoutExerciseId });
   }
 }
 
@@ -1059,6 +1096,7 @@ async function applyProgressionForExercise(
     const { error: deloadError } = await supabase.from("deload_events").insert({
       user_id: userId,
       program_enrollment_id: enrollmentId,
+      workout_exercise_id: workoutExerciseId,
       exercise_id: workoutExercise.exercise_id,
       from_load: decision.fromLoad,
       to_load: decision.toLoad,
@@ -1141,11 +1179,15 @@ export async function completeWorkout(
 
     await advanceNextTemplate(supabase, enrollment, session.workout_template_id);
     revalidatePath("/dashboard");
+    logInfo("workout.complete.completed", {
+      route: "/dashboard",
+      operation: "completeWorkout",
+      userId: user.id,
+      workoutId,
+    });
     return success(await getWorkoutView(supabase, workoutId));
   } catch (error) {
-    return failure(
-      error instanceof Error ? error.message : "Could not complete workout.",
-    );
+    return actionFailure(error, "workout.complete.failed", "completeWorkout", "Could not complete workout.", { workoutId });
   }
 }
 
@@ -1181,11 +1223,7 @@ export async function calculateNextWorkout(): Promise<
       }),
     });
   } catch (error) {
-    return failure(
-      error instanceof Error
-        ? error.message
-        : "Could not calculate the next workout.",
-    );
+    return actionFailure(error, "workout.next.calculate.failed", "calculateNextWorkout", "Could not calculate the next workout.");
   }
 }
 
@@ -1238,7 +1276,7 @@ export async function applyDeload(
     revalidatePath("/dashboard");
     return success({ fromLoad, toLoad, unit: state.unit });
   } catch (error) {
-    return failure(error instanceof Error ? error.message : "Could not deload.");
+    return actionFailure(error, "workout.deload.failed", "applyDeload", "Could not deload.", { exerciseId: input.exerciseId });
   }
 }
 
@@ -1268,9 +1306,7 @@ export async function fetchHistory(
 
     return success(workouts);
   } catch (error) {
-    return failure(
-      error instanceof Error ? error.message : "Could not fetch workout history.",
-    );
+    return actionFailure(error, "workout.history.fetch.failed", "fetchHistory", "Could not fetch workout history.");
   }
 }
 
@@ -1300,9 +1336,7 @@ export async function fetchChartData(): Promise<ActionResult<ChartDataPoint[]>> 
 
     return success(points);
   } catch (error) {
-    return failure(
-      error instanceof Error ? error.message : "Could not fetch chart data.",
-    );
+    return actionFailure(error, "workout.chart.fetch.failed", "fetchChartData", "Could not fetch chart data.");
   }
 }
 
@@ -1336,8 +1370,6 @@ export async function updateUserSettings(
       unitSystem: data.unit_system,
     });
   } catch (error) {
-    return failure(
-      error instanceof Error ? error.message : "Could not update settings.",
-    );
+    return actionFailure(error, "settings.update.failed", "updateUserSettings", "Could not update settings.");
   }
 }

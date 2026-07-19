@@ -513,6 +513,7 @@ Columns:
 - `id uuid primary key default gen_random_uuid()`
 - `user_id uuid not null references auth.users(id) on delete cascade`
 - `program_enrollment_id uuid not null references program_enrollments(id) on delete cascade`
+- `workout_exercise_id uuid references workout_exercises(id) on delete cascade`
 - `exercise_id uuid not null references exercises(id) on delete restrict`
 - `from_load numeric(6, 2) not null`
 - `to_load numeric(6, 2) not null`
@@ -524,6 +525,12 @@ Constraints:
 
 - `from_load >= 0`.
 - `to_load >= 0`.
+
+Notes:
+
+- Automatic deload events should include `workout_exercise_id` so deleting a
+  workout removes the deload event that came from that workout.
+- Manual deload events may leave `workout_exercise_id` null.
 
 #### `progression_decisions`
 

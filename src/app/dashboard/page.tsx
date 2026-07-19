@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { logOut } from "@/app/auth/actions";
+import { fetchHistory } from "@/app/workouts/actions";
+import { DataOwnershipPanel } from "@/app/dashboard/data-ownership-panel";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function DashboardPage() {
@@ -14,6 +16,17 @@ export default async function DashboardPage() {
 
   const { data: userData } = await supabase.auth.getUser();
   const email = userData.user?.email ?? claimsData.claims.email ?? "Signed in";
+  const history = await fetchHistory(10);
+  const workouts = history.ok
+    ? history.data.map((workout) => ({
+        id: workout.id,
+        templateName: workout.templateName ?? "Workout",
+        status: workout.status,
+        completedAt: workout.completedAt,
+        startedAt: workout.startedAt,
+        exerciseCount: workout.exercises.length,
+      }))
+    : [];
 
   return (
     <main className="min-h-screen bg-[#f7f5ef] text-[#171512]">
@@ -87,6 +100,8 @@ export default async function DashboardPage() {
               variables to the host, and test sign in on the live URL.
             </p>
           </section>
+
+          <DataOwnershipPanel workouts={workouts} />
         </div>
       </section>
     </main>
