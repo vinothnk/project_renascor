@@ -1,15 +1,13 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { logOut } from "@/app/auth/actions";
 import {
   calculateNextWorkout,
-  clearRestTimer,
   completeWorkout,
   createWorkout,
   discardWorkoutSession,
   pauseWorkoutSession,
-  startWorkoutSession,
   updateSetResult,
   updateUserSettings,
 } from "@/app/workouts/actions";
@@ -17,6 +15,7 @@ import { DataOwnershipPanel } from "@/app/dashboard/data-ownership-panel";
 import type {
   ChartDataPoint,
   NextWorkoutPreview,
+  WorkoutExerciseView,
   WorkoutSetView,
   WorkoutView,
 } from "@/lib/training/types";
@@ -65,6 +64,27 @@ type NavItem = {
 
 type KpiKey = "lastWorkout" | "workoutsDone" | "trackedLifts" | "personalRecords";
 
+type RestTimerState = {
+  visible: boolean;
+  running: boolean;
+  phase: 1 | 2;
+  startedAt: number | null;
+  elapsedBeforePause: number;
+  alert: boolean;
+};
+
+const REST_INTERVAL_SECONDS = 90;
+const MAX_REST_SECONDS = 180;
+
+const defaultRestTimer: RestTimerState = {
+  visible: false,
+  running: false,
+  phase: 1,
+  startedAt: null,
+  elapsedBeforePause: 0,
+  alert: false,
+};
+
 const navItems: NavItem[] = [
   { tab: "dashboard", label: "Dashboard", icon: "home" },
   { tab: "workout", label: "Workout", icon: "workout" },
@@ -93,6 +113,13 @@ function formatShortDate(value: string | null) {
   }).format(new Date(value));
 }
 
+function formatSaveTimestamp() {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date());
+}
+
 function formatMonth(value: string) {
   return new Intl.DateTimeFormat(undefined, {
     year: "numeric",
@@ -110,26 +137,88 @@ function totalSetCount(workout: WorkoutView) {
   return workout.exercises.flatMap((exercise) => exercise.sets).length;
 }
 
-function nextPlannedSet(workout: WorkoutView) {
-  return workout.exercises
-    .flatMap((exercise) =>
-      exercise.sets.map((set) => ({ exerciseName: exercise.exerciseName, set })),
-    )
-    .find(({ set }) => set.status === "planned");
-}
-
-function restRemaining(workout: WorkoutView) {
-  if (!workout.restStartedAt || !workout.targetRestSeconds) return null;
-  const elapsed = Math.floor(
-    (Date.now() - new Date(workout.restStartedAt).getTime()) / 1000,
-  );
-  return Math.max(0, workout.targetRestSeconds - elapsed);
-}
-
 function formatSeconds(seconds: number) {
   const minutes = Math.floor(seconds / 60);
   const remainder = seconds % 60;
   return `${minutes}:${remainder.toString().padStart(2, "0")}`;
+}
+
+function ringRestBell() {
+  try {
+    const AudioContextCtor =
+      window.AudioContext ||
+      (window as Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext;
+
+    if (!AudioContextCtor) {
+      return;
+    }
+
+    const audioContext = new AudioContextCtor();
+    const oscillator = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(880, audioContext.currentTime);
+    gain.gain.setValueAtTime(0.001, audioContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.2, audioContext.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.45);
+    oscillator.connect(gain);
+    gain.connect(audioContext.destination);
+    oscillator.start();
+    oscillator.stop(audioContext.currentTime + 0.5);
+  } catch {
+    // Browsers can block audio if the page has not received a user gesture.
+  }
+}
+
+function setStateLabel(set: WorkoutSetView) {
+  if (set.status === "completed") return "Completed";
+  if (set.status === "failed") return "Missed";
+  if (set.status === "skipped") return "Skipped";
+  return "Pending";
+}
+
+function exerciseVolume(exercise: WorkoutExerciseView) {
+  return exercise.sets.reduce(
+    (total, set) =>
+      set.status === "completed" || set.status === "failed"
+        ? total + set.completedReps * set.load
+        : total,
+    0,
+  );
+}
+
+function sessionVolume(workout: WorkoutView) {
+  return workout.exercises.reduce(
+    (total, exercise) => total + exerciseVolume(exercise),
+    0,
+  );
+}
+
+function warmupRows(exercise: WorkoutExerciseView) {
+  return [0.4, 0.55, 0.7].map((percent, index) => ({
+    load: Math.max(0, Math.round(exercise.plannedLoad * percent * 2) / 2),
+    reps: [10, 5, 3][index],
+  }));
+}
+
+function plateRows(load: number, unit: string) {
+  const bar = unit === "lb" ? 45 : 20;
+  const side = Math.max(0, (load - bar) / 2);
+  const plates = unit === "lb" ? [45, 35, 25, 10, 5, 2.5] : [25, 20, 15, 10, 5, 2.5, 1.25];
+  const used: Array<{ plate: number; count: number }> = [];
+  let remaining = side;
+
+  for (const plate of plates) {
+    const count = Math.floor((remaining + 0.001) / plate);
+    if (count > 0) {
+      used.push({ plate, count });
+      remaining = Math.round((remaining - count * plate) * 100) / 100;
+    }
+  }
+
+  return used;
 }
 
 function MiniLineChart({ points }: { points: ChartDataPoint[] }) {
@@ -180,50 +269,72 @@ function NavIcon({ icon }: { icon: NavItem["icon"] }) {
   );
 }
 
-function SetRow({
+function TrackerSetRow({
   set,
   onComplete,
   onMiss,
+  isCurrent,
   disabled,
 }: {
   set: WorkoutSetView;
   onComplete: () => void;
   onMiss: (reps: number) => void;
+  isCurrent: boolean;
   disabled: boolean;
 }) {
-  const missedOptions = Array.from({ length: set.targetReps }, (_, index) => index);
+  const initialReps = set.status === "planned" ? 0 : set.completedReps;
 
   return (
-    <div className={`set-row set-${set.status}`}>
+    <div className={`tracker-set-row set-${set.status} ${isCurrent ? "current" : ""}`}>
+      <div className="set-number">
+        <strong>{set.setNumber}</strong>
+      </div>
       <div>
-        <strong>Set {set.setNumber}</strong>
-        <span>
-          {set.completedReps || set.targetReps}/{set.targetReps} reps at{" "}
-          {set.load} {set.unit}
-        </span>
-      </div>
-      <div className="set-actions">
-        <button disabled={disabled} onClick={onComplete}>
-          Done
-        </button>
-        <select
-          aria-label={`Missed reps for set ${set.setNumber}`}
+        <input
+          aria-label={`Completed reps for set ${set.setNumber}`}
+          defaultValue={initialReps}
           disabled={disabled}
-          defaultValue=""
-          onChange={(event) => {
-            if (event.target.value !== "") onMiss(Number(event.target.value));
-            event.currentTarget.value = "";
+          inputMode="numeric"
+          min="0"
+          max={set.targetReps}
+          onBlur={(event) => {
+            const reps = Number(event.currentTarget.value);
+            if (Number.isFinite(reps)) {
+              const completedReps = Math.max(0, Math.min(set.targetReps, Math.trunc(reps)));
+              if (completedReps !== initialReps) {
+                onMiss(completedReps);
+              }
+            }
           }}
-        >
-          <option value="">Missed</option>
-          {missedOptions.map((reps) => (
-            <option key={reps} value={reps}>
-              {reps} reps
-            </option>
-          ))}
-        </select>
+          type="number"
+          key={`${set.id}-${set.status}-${set.completedReps}`}
+        />
       </div>
-    </div>
+      <div>
+        <input
+          aria-label={`Weight for set ${set.setNumber}`}
+          defaultValue={set.load}
+          disabled={disabled}
+          inputMode="decimal"
+          readOnly
+          type="number"
+        />
+      </div>
+      <label className="done-check">
+        <input
+          aria-label={`Mark set ${set.setNumber} done`}
+          checked={set.status === "completed"}
+          disabled={disabled}
+          onChange={(event) => {
+            if (event.currentTarget.checked) {
+              onComplete();
+            }
+          }}
+          type="checkbox"
+        />
+        <span>{setStateLabel(set)}</span>
+      </label>
+      </div>
   );
 }
 
@@ -233,6 +344,8 @@ export function TrainingApp(props: TrainingAppProps) {
   const [workout, setWorkout] = useState(props.openWorkout);
   const [profile, setProfile] = useState(props.profile);
   const [message, setMessage] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const [restTimer, setRestTimer] = useState<RestTimerState>(defaultRestTimer);
   const [isPending, startTransition] = useTransition();
 
   const activeWorkout = workout ?? props.openWorkout;
@@ -352,7 +465,7 @@ export function TrainingApp(props: TrainingAppProps) {
     startTransition(async () => {
       const result = await action();
       if (result.ok) setWorkout(result.data);
-      setMessage(result.ok ? "Saved." : result.error);
+      setMessage(result.ok ? `Saved at ${formatSaveTimestamp()}.` : result.error);
     });
   }
 
@@ -361,7 +474,64 @@ export function TrainingApp(props: TrainingAppProps) {
     setTab("workout");
   }
 
+  function startRestTimer() {
+    setNow(Date.now());
+    setRestTimer({
+      visible: true,
+      running: true,
+      phase: 1,
+      startedAt: Date.now(),
+      elapsedBeforePause: 0,
+      alert: false,
+    });
+  }
+
+  function pauseRestTimer() {
+    setRestTimer((current) => {
+      if (!current.visible || !current.running || !current.startedAt) {
+        return current;
+      }
+
+      return {
+        ...current,
+        running: false,
+        startedAt: null,
+        elapsedBeforePause:
+          current.elapsedBeforePause +
+          Math.floor((Date.now() - current.startedAt) / 1000),
+      };
+    });
+  }
+
+  function resumeRestTimer() {
+    setNow(Date.now());
+    setRestTimer((current) => ({
+      ...current,
+      visible: true,
+      running: true,
+      startedAt: Date.now(),
+      alert: false,
+    }));
+  }
+
+  function endRestTimer() {
+    setRestTimer(defaultRestTimer);
+  }
+
+  function extendRestTimer() {
+    setNow(Date.now());
+    setRestTimer({
+      visible: true,
+      running: true,
+      phase: 2,
+      startedAt: Date.now(),
+      elapsedBeforePause: REST_INTERVAL_SECONDS,
+      alert: false,
+    });
+  }
+
   function saveSet(set: WorkoutSetView, completedReps: number) {
+    startRestTimer();
     runWorkoutAction(() =>
       updateSetResult({
         setId: set.id,
@@ -369,7 +539,6 @@ export function TrainingApp(props: TrainingAppProps) {
         status: completedReps >= set.targetReps ? "completed" : "failed",
         failureReason:
           completedReps >= set.targetReps ? undefined : "Missed prescribed reps.",
-        targetRestSeconds: 180,
       }),
     );
   }
@@ -391,12 +560,61 @@ export function TrainingApp(props: TrainingAppProps) {
           unitSystem: result.data.unitSystem ?? unitSystem,
         }));
       }
-      setMessage(result.ok ? "Metric setting saved." : result.error);
+      setMessage(
+        result.ok ? `Metric setting saved at ${formatSaveTimestamp()}.` : result.error,
+      );
     });
   }
 
-  const planned = activeWorkout ? nextPlannedSet(activeWorkout) : null;
-  const remainingRest = activeWorkout ? restRemaining(activeWorkout) : null;
+  useEffect(() => {
+    if (!restTimer.visible || !restTimer.running) {
+      return;
+    }
+
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [restTimer.visible, restTimer.running]);
+
+  const restElapsed = restTimer.running && restTimer.startedAt
+    ? Math.min(
+        MAX_REST_SECONDS,
+        restTimer.elapsedBeforePause +
+          Math.floor((now - restTimer.startedAt) / 1000),
+      )
+    : restTimer.elapsedBeforePause;
+  const restTargetSeconds =
+    restTimer.phase === 1 ? REST_INTERVAL_SECONDS : MAX_REST_SECONDS;
+  const restRemaining = Math.max(0, restTargetSeconds - restElapsed);
+
+  useEffect(() => {
+    if (!restTimer.visible || !restTimer.running) {
+      return;
+    }
+
+    if (restTimer.phase === 1 && restElapsed >= REST_INTERVAL_SECONDS) {
+      ringRestBell();
+      setRestTimer((current) => ({
+        ...current,
+        running: false,
+        startedAt: null,
+        elapsedBeforePause: REST_INTERVAL_SECONDS,
+        alert: true,
+      }));
+    }
+
+    if (restTimer.phase === 2 && restElapsed >= MAX_REST_SECONDS) {
+      ringRestBell();
+      setRestTimer(defaultRestTimer);
+    }
+  }, [restElapsed, restTimer.phase, restTimer.running, restTimer.visible]);
+
+  const currentExercise = activeWorkout
+    ? activeWorkout.exercises.find((exercise) =>
+        exercise.sets.some((set) => set.status === "planned"),
+      ) ?? activeWorkout.exercises[0]
+    : null;
+  const currentSet = currentExercise?.sets.find((set) => set.status === "planned") ?? null;
+  const workoutIsComplete = activeWorkout?.status === "completed";
 
   return (
     <main className="app-shell">
@@ -543,44 +761,147 @@ export function TrainingApp(props: TrainingAppProps) {
           <section className="workout-layout">
           {activeWorkout ? (
             <>
-              <div className="sticky-context">
+              <div className="tracker-title">
+                <p className="brand">SESSION</p>
+                <h2>Workout tracker</h2>
+              </div>
+
+              <div className="tracker-session-card">
                 <div>
-                  <p className="eyebrow">{activeWorkout.status}</p>
-                  <h2>{activeWorkout.templateName ?? "Workout"}</h2>
+                  <h3>{activeWorkout.templateName ?? "Workout"}</h3>
+                  <p>
+                    Session volume: {Math.round(sessionVolume(activeWorkout))}{" "}
+                    {currentExercise?.unit ?? "kg"}
+                  </p>
                 </div>
-                {remainingRest !== null ? (
-                  <button onClick={() => runWorkoutAction(() => clearRestTimer(activeWorkout.id))}>
-                    Rest {formatSeconds(remainingRest)}
+                <div className="tracker-session-actions">
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={isPending || workoutIsComplete}
+                    onClick={() => runWorkoutAction(() => pauseWorkoutSession(activeWorkout.id))}
+                  >
+                    {isPending ? "Saving" : "Save"}
                   </button>
-                ) : null}
+                  <button
+                    type="button"
+                    className="danger-outline"
+                    disabled={isPending || workoutIsComplete}
+                    onClick={() => {
+                      if (window.confirm("Discard this workout? Logged sets will remain in this discarded session, and progression will not be applied.")) {
+                        runWorkoutAction(() => discardWorkoutSession(activeWorkout.id));
+                      }
+                    }}
+                  >
+                    Delete
+                  </button>
+                  <button
+                    type="button"
+                    className="complete"
+                    disabled={isPending || workoutIsComplete}
+                    onClick={() => {
+                      if (window.confirm("Complete this workout and apply progression?")) {
+                        finishWorkout();
+                      }
+                    }}
+                  >
+                    Complete
+                  </button>
+                </div>
               </div>
-              {activeWorkout.exercises.map((exercise) => (
-                <article className="exercise-card" key={exercise.id}>
-                  <div className="exercise-head">
-                    <h3>{exercise.exerciseName}</h3>
-                    <span>{exercise.targetSets}x{exercise.targetReps} at {exercise.plannedLoad} {exercise.unit}</span>
-                  </div>
-                  {exercise.sets.map((set) => (
-                    <SetRow
-                      key={set.id}
-                      set={set}
-                      disabled={isPending || activeWorkout.status === "completed"}
-                      onComplete={() => saveSet(set, set.targetReps)}
-                      onMiss={(reps) => saveSet(set, reps)}
-                    />
-                  ))}
-                </article>
-              ))}
-              <div className="bottom-actions">
-                <button disabled={isPending} onClick={() => runWorkoutAction(() => startWorkoutSession(activeWorkout.id))}>Resume</button>
-                <button disabled={isPending} onClick={() => runWorkoutAction(() => pauseWorkoutSession(activeWorkout.id))}>Pause</button>
-                <button disabled={isPending} onClick={finishWorkout}>Finish</button>
-                <button disabled={isPending} className="danger" onClick={() => {
-                  if (window.confirm("Discard this active workout? Progression will not be applied.")) {
-                    runWorkoutAction(() => discardWorkoutSession(activeWorkout.id));
-                  }
-                }}>Discard</button>
-              </div>
+
+              {activeWorkout.exercises.map((exercise) => {
+                const exerciseCurrentSet =
+                  exercise.sets.find((set) => set.status === "planned") ?? null;
+
+                return (
+                  <article className="tracker-exercise-card" key={exercise.id}>
+                    <div className="tracker-exercise-head">
+                      <div>
+                        <h3>{exercise.exerciseName}</h3>
+                        <p>
+                          Current working weight: {exercise.plannedLoad}{" "}
+                          {exercise.unit} - Target {exercise.targetSets} x{" "}
+                          {exercise.targetReps}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="tracker-summary-strip">
+                      <span>
+                        Current set:{" "}
+                        <strong>
+                          {exerciseCurrentSet ? exerciseCurrentSet.setNumber : "All sets logged"}
+                        </strong>
+                      </span>
+                      <span>
+                        Completed:{" "}
+                        <strong>
+                          {exercise.sets.filter((set) => set.status !== "planned").length} /{" "}
+                          {exercise.sets.length} sets
+                        </strong>
+                      </span>
+                      <span>
+                        Status: <strong>{exercise.status}</strong>
+                      </span>
+                    </div>
+
+                    <div className="tracker-tools">
+                      <section>
+                        <h4>Warm-up sets</h4>
+                        <div className="warmup-grid">
+                          {warmupRows(exercise).map((row) => (
+                            <div key={`${exercise.id}-${row.load}-${row.reps}`}>
+                              <span>{row.load} {exercise.unit}</span>
+                              <span>{row.reps} reps</span>
+                              <input type="checkbox" aria-label={`Warm-up ${row.load} ${exercise.unit}`} />
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                      <section>
+                        <h4>Plate calculator</h4>
+                        <p>Loaded total: {exercise.plannedLoad} {exercise.unit}</p>
+                        <div className="plate-bar">
+                          {plateRows(exercise.plannedLoad, exercise.unit).map((plate) => (
+                            <span key={plate.plate}>{plate.plate}</span>
+                          ))}
+                          <strong>BAR</strong>
+                          {plateRows(exercise.plannedLoad, exercise.unit).reverse().map((plate) => (
+                            <span key={`r-${plate.plate}`}>{plate.plate}</span>
+                          ))}
+                        </div>
+                        <p>
+                          {plateRows(exercise.plannedLoad, exercise.unit)
+                            .map((plate) => `${plate.plate} ${exercise.unit} x ${plate.count} per side`)
+                            .join(", ") || "Empty bar"}
+                        </p>
+                      </section>
+                    </div>
+
+                    <div className="working-sets">
+                      <div className="working-sets-head">
+                        <h4>Working sets</h4>
+                        <div>Set</div>
+                        <div>Reps</div>
+                        <div>Weight</div>
+                        <div>Done</div>
+                      </div>
+                      {exercise.sets.map((set) => (
+                        <TrackerSetRow
+                          key={set.id}
+                          set={set}
+                          isCurrent={set.id === currentSet?.id}
+                          disabled={isPending || workoutIsComplete}
+                          onComplete={() => saveSet(set, set.targetReps)}
+                          onMiss={(reps) => saveSet(set, reps)}
+                        />
+                      ))}
+                    </div>
+                  </article>
+                );
+              })}
+
             </>
           ) : (
             <div className="empty-state">
@@ -589,6 +910,46 @@ export function TrainingApp(props: TrainingAppProps) {
               <button disabled={isPending} onClick={startWorkout}>Start workout</button>
             </div>
           )}
+          {restTimer.visible ? (
+            <aside
+              aria-live="polite"
+              className={`rest-popout ${restTimer.alert ? "alert" : ""}`}
+            >
+              <div>
+                <p className="eyebrow">Rest timer</p>
+                <h3>{restTimer.alert ? "Rest complete" : "Resting"}</h3>
+                <strong>{formatSeconds(restRemaining)}</strong>
+                <span>
+                  {restTimer.phase === 1
+                    ? "First 90 seconds"
+                    : "Extended rest, auto-starting next set at 180 seconds"}
+                </span>
+              </div>
+              {restTimer.alert ? (
+                <div className="rest-popout-actions">
+                  <button type="button" onClick={endRestTimer}>
+                    Start next set
+                  </button>
+                  <button type="button" className="secondary" onClick={extendRestTimer}>
+                    Extend 90s
+                  </button>
+                </div>
+              ) : (
+                <div className="rest-popout-actions">
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={restTimer.running ? pauseRestTimer : resumeRestTimer}
+                  >
+                    {restTimer.running ? "Pause" : "Start"}
+                  </button>
+                  <button type="button" className="danger-outline" onClick={endRestTimer}>
+                    End
+                  </button>
+                </div>
+              )}
+            </aside>
+          ) : null}
           </section>
         ) : null}
 
