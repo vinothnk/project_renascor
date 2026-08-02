@@ -79,6 +79,22 @@ type RestTimerState = {
   alert: boolean;
 };
 
+type WorkoutAssistanceSet = {
+  setNumber: number;
+  reps: number;
+  weight: number;
+  done: boolean;
+};
+
+type WorkoutAssistanceItem = {
+  id: string;
+  exerciseId: string;
+  exerciseName: string;
+  category: string;
+  notes: string;
+  sets: WorkoutAssistanceSet[];
+};
+
 const REST_INTERVAL_SECONDS = 90;
 const MAX_REST_SECONDS = 180;
 
@@ -353,6 +369,11 @@ export function TrainingApp(props: TrainingAppProps) {
     props.assistanceLibrary,
   );
   const [selectedAssistanceIds, setSelectedAssistanceIds] = useState<string[]>([]);
+  const [selectedWorkoutAssistanceId, setSelectedWorkoutAssistanceId] =
+    useState("");
+  const [workoutAssistanceItems, setWorkoutAssistanceItems] = useState<
+    WorkoutAssistanceItem[]
+  >([]);
   const [message, setMessage] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [restTimer, setRestTimer] = useState<RestTimerState>(defaultRestTimer);
@@ -494,6 +515,12 @@ export function TrainingApp(props: TrainingAppProps) {
       if (rightIndex === -1) return -1;
       return leftIndex - rightIndex;
     },
+  );
+  const workoutAssistanceOptions = orderedAssistanceCategories.flatMap((category) =>
+    assistanceByCategory[category].map((exercise) => ({
+      ...exercise,
+      label: `${category} - ${exercise.name}`,
+    })),
   );
 
   function runWorkoutAction(action: () => Promise<{ ok: true; data: WorkoutView } | { ok: false; error: string }>) {
@@ -645,6 +672,68 @@ export function TrainingApp(props: TrainingAppProps) {
           : result.error,
       );
     });
+  }
+
+  function addWorkoutAssistance() {
+    const exerciseId =
+      selectedWorkoutAssistanceId || workoutAssistanceOptions[0]?.id || "";
+
+    if (!exerciseId) {
+      return;
+    }
+
+    const exercise = workoutAssistanceOptions.find((item) => item.id === exerciseId);
+    if (!exercise) {
+      return;
+    }
+
+    setWorkoutAssistanceItems((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        exerciseId: exercise.id,
+        exerciseName: exercise.name,
+        category: exercise.category,
+        notes: "",
+        sets: Array.from({ length: 3 }, (_, index) => ({
+          setNumber: index + 1,
+          reps: 10,
+          weight: 0,
+          done: false,
+        })),
+      },
+    ]);
+  }
+
+  function removeWorkoutAssistance(itemId: string) {
+    setWorkoutAssistanceItems((current) =>
+      current.filter((item) => item.id !== itemId),
+    );
+  }
+
+  function updateWorkoutAssistanceNotes(itemId: string, notes: string) {
+    setWorkoutAssistanceItems((current) =>
+      current.map((item) => (item.id === itemId ? { ...item, notes } : item)),
+    );
+  }
+
+  function updateWorkoutAssistanceSet(
+    itemId: string,
+    setNumber: number,
+    changes: Partial<WorkoutAssistanceSet>,
+  ) {
+    setWorkoutAssistanceItems((current) =>
+      current.map((item) =>
+        item.id === itemId
+          ? {
+              ...item,
+              sets: item.sets.map((set) =>
+                set.setNumber === setNumber ? { ...set, ...changes } : set,
+              ),
+            }
+          : item,
+      ),
+    );
   }
 
   useEffect(() => {
@@ -983,6 +1072,163 @@ export function TrainingApp(props: TrainingAppProps) {
                 );
               })}
 
+              <section className="workout-assistance-block">
+                <div className="workout-assistance-panel">
+                  <div>
+                    <h3>Assistance work</h3>
+                    <p>Optional and excluded from StrongLifts progression.</p>
+                    <p>
+                      Add dips, rows, core work, or any custom assistance after
+                      your main lifts.
+                    </p>
+                  </div>
+                  <div className="workout-assistance-actions">
+                    <select
+                      aria-label="Assistance exercise"
+                      disabled={workoutAssistanceOptions.length === 0}
+                      onChange={(event) =>
+                        setSelectedWorkoutAssistanceId(event.currentTarget.value)
+                      }
+                      value={
+                        selectedWorkoutAssistanceId ||
+                        workoutAssistanceOptions[0]?.id ||
+                        ""
+                      }
+                    >
+                      {workoutAssistanceOptions.length ? (
+                        workoutAssistanceOptions.map((exercise) => (
+                          <option key={exercise.id} value={exercise.id}>
+                            {exercise.label}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="">No assistance available</option>
+                      )}
+                    </select>
+                    <button
+                      disabled={workoutAssistanceOptions.length === 0}
+                      onClick={addWorkoutAssistance}
+                      type="button"
+                    >
+                      + Add
+                    </button>
+                  </div>
+                </div>
+
+                {workoutAssistanceItems.length ? (
+                  <div className="workout-assistance-list">
+                    {workoutAssistanceItems.map((item) => (
+                      <article className="workout-assistance-card" key={item.id}>
+                        <div className="workout-assistance-card-head">
+                          <input
+                            aria-label={`${item.exerciseName} assistance exercise`}
+                            readOnly
+                            value={item.exerciseName}
+                          />
+                          <input
+                            aria-label={`${item.exerciseName} notes`}
+                            onChange={(event) =>
+                              updateWorkoutAssistanceNotes(
+                                item.id,
+                                event.currentTarget.value,
+                              )
+                            }
+                            placeholder="Notes"
+                            value={item.notes}
+                          />
+                          <button
+                            aria-label={`Remove ${item.exerciseName}`}
+                            className="secondary icon-button"
+                            onClick={() => removeWorkoutAssistance(item.id)}
+                            type="button"
+                          >
+                            ×
+                          </button>
+                        </div>
+
+                        <div className="assistance-working-sets">
+                          <div className="working-sets-head assistance-sets-head">
+                            <h4>Working sets</h4>
+                            <div>Set</div>
+                            <div>Reps</div>
+                            <div>Weight</div>
+                            <div>Done</div>
+                          </div>
+                          {item.sets.map((set) => (
+                            <div className="tracker-set-row assistance-set-row" key={set.setNumber}>
+                              <div className="set-number">
+                                <strong>{set.setNumber}</strong>
+                              </div>
+                              <div>
+                                <input
+                                  aria-label={`${item.exerciseName} set ${set.setNumber} reps`}
+                                  inputMode="numeric"
+                                  min="0"
+                                  onChange={(event) =>
+                                    updateWorkoutAssistanceSet(
+                                      item.id,
+                                      set.setNumber,
+                                      {
+                                        reps: Math.max(
+                                          0,
+                                          Math.trunc(Number(event.currentTarget.value) || 0),
+                                        ),
+                                      },
+                                    )
+                                  }
+                                  type="number"
+                                  value={set.reps}
+                                />
+                              </div>
+                              <div>
+                                <input
+                                  aria-label={`${item.exerciseName} set ${set.setNumber} weight`}
+                                  inputMode="decimal"
+                                  min="0"
+                                  onChange={(event) =>
+                                    updateWorkoutAssistanceSet(
+                                      item.id,
+                                      set.setNumber,
+                                      {
+                                        weight: Math.max(
+                                          0,
+                                          Number(event.currentTarget.value) || 0,
+                                        ),
+                                      },
+                                    )
+                                  }
+                                  type="number"
+                                  value={set.weight}
+                                />
+                              </div>
+                              <label className="done-check">
+                                <input
+                                  aria-label={`Mark ${item.exerciseName} set ${set.setNumber} done`}
+                                  checked={set.done}
+                                  onChange={(event) =>
+                                    updateWorkoutAssistanceSet(
+                                      item.id,
+                                      set.setNumber,
+                                      { done: event.currentTarget.checked },
+                                    )
+                                  }
+                                  type="checkbox"
+                                />
+                              </label>
+                            </div>
+                          ))}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : null}
+
+                <label className="workout-notes-field">
+                  Workout notes
+                  <textarea aria-label="Workout notes" rows={4} />
+                </label>
+              </section>
+
             </>
           ) : (
             <div className="empty-state">
@@ -1101,8 +1347,7 @@ export function TrainingApp(props: TrainingAppProps) {
                 ) : (
                   <div className="panel">
                     <p className="muted">
-                      Assistance exercises will appear after the Supabase
-                      migration has been applied.
+                      No assistance exercises are available yet.
                     </p>
                   </div>
                 )}

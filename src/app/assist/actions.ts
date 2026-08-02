@@ -26,6 +26,13 @@ type AssistanceExerciseRow = {
   created_by_user_id: string | null;
 };
 
+type BaseExerciseRow = {
+  id: string;
+  name: string;
+  category: string | null;
+  default_unit: LoadUnit;
+};
+
 type AssistanceTemplateRow = {
   id: string;
   name: string;
@@ -53,6 +60,34 @@ const assistanceCategories = [
   "Core",
   "Lower Body",
   "Shoulders",
+];
+
+const confirmedAssistanceExercises: AssistanceExerciseView[] = [
+  { id: "preset-barbell-curls", name: "Barbell Curls", category: "Arms", defaultUnit: "kg", isCustom: false },
+  { id: "preset-dumbbell-curls", name: "Dumbbell Curls", category: "Arms", defaultUnit: "kg", isCustom: false },
+  { id: "preset-hammer-curls", name: "Hammer Curls", category: "Arms", defaultUnit: "kg", isCustom: false },
+  { id: "preset-skull-crushers", name: "Skull Crushers", category: "Arms", defaultUnit: "kg", isCustom: false },
+  { id: "preset-tricep-pushdowns", name: "Tricep Pushdowns", category: "Arms", defaultUnit: "kg", isCustom: false },
+  { id: "preset-chin-ups", name: "Chin-Ups", category: "Back", defaultUnit: "kg", isCustom: false },
+  { id: "preset-lat-pulldowns", name: "Lat Pulldowns", category: "Back", defaultUnit: "kg", isCustom: false },
+  { id: "preset-pull-ups", name: "Pull-Ups", category: "Back", defaultUnit: "kg", isCustom: false },
+  { id: "preset-seated-cable-rows", name: "Seated Cable Rows", category: "Back", defaultUnit: "kg", isCustom: false },
+  { id: "preset-dips", name: "Dips", category: "Chest", defaultUnit: "kg", isCustom: false },
+  { id: "preset-dumbbell-flyes", name: "Dumbbell Flyes", category: "Chest", defaultUnit: "kg", isCustom: false },
+  { id: "preset-incline-dumbbell-press", name: "Incline Dumbbell Press", category: "Chest", defaultUnit: "kg", isCustom: false },
+  { id: "preset-push-ups", name: "Push-Ups", category: "Chest", defaultUnit: "kg", isCustom: false },
+  { id: "preset-ab-wheel-rollouts", name: "Ab Wheel Rollouts", category: "Core", defaultUnit: "kg", isCustom: false },
+  { id: "preset-cable-crunches", name: "Cable Crunches", category: "Core", defaultUnit: "kg", isCustom: false },
+  { id: "preset-hanging-leg-raises", name: "Hanging Leg Raises", category: "Core", defaultUnit: "kg", isCustom: false },
+  { id: "preset-plank", name: "Plank", category: "Core", defaultUnit: "kg", isCustom: false },
+  { id: "preset-bulgarian-split-squats", name: "Bulgarian Split Squats", category: "Lower Body", defaultUnit: "kg", isCustom: false },
+  { id: "preset-calf-raises", name: "Calf Raises", category: "Lower Body", defaultUnit: "kg", isCustom: false },
+  { id: "preset-leg-curls", name: "Leg Curls", category: "Lower Body", defaultUnit: "kg", isCustom: false },
+  { id: "preset-lunges", name: "Lunges", category: "Lower Body", defaultUnit: "kg", isCustom: false },
+  { id: "preset-step-ups", name: "Step Ups", category: "Lower Body", defaultUnit: "kg", isCustom: false },
+  { id: "preset-face-pulls", name: "Face Pulls", category: "Shoulders", defaultUnit: "kg", isCustom: false },
+  { id: "preset-lateral-raises", name: "Lateral Raises", category: "Shoulders", defaultUnit: "kg", isCustom: false },
+  { id: "preset-rear-delt-flyes", name: "Rear Delt Flyes", category: "Shoulders", defaultUnit: "kg", isCustom: false },
 ];
 
 function success<T>(data: T): ActionResult<T> {
@@ -95,6 +130,16 @@ function normalizeCategory(value: string) {
   return known ?? trimmed;
 }
 
+function needsAssistanceMigration(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return /created_by_user_id|assistance_templates|assistance_template_exercises|schema cache/i.test(
+    error.message,
+  );
+}
+
 async function getUser(supabase: SupabaseClient): Promise<User> {
   const { data, error } = await supabase.auth.getUser();
 
@@ -113,6 +158,22 @@ function mapExercise(row: AssistanceExerciseRow, userId: string): AssistanceExer
     defaultUnit: row.default_unit,
     isCustom: row.created_by_user_id === userId,
   };
+}
+
+function mapBaseExercise(row: BaseExerciseRow): AssistanceExerciseView {
+  return {
+    id: row.id,
+    name: row.name,
+    category: row.category ?? "Custom",
+    defaultUnit: row.default_unit,
+    isCustom: false,
+  };
+}
+
+function assistanceOnly(exercises: AssistanceExerciseView[]) {
+  return exercises.filter((exercise) =>
+    assistanceCategories.includes(exercise.category) || exercise.isCustom,
+  );
 }
 
 async function fetchTemplates(
@@ -163,6 +224,47 @@ async function fetchTemplates(
   }));
 }
 
+async function fetchTemplatesOrEmpty(supabase: SupabaseClient) {
+  try {
+    return await fetchTemplates(supabase);
+  } catch {
+    return [];
+  }
+}
+
+async function fetchExercises(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<AssistanceExerciseView[]> {
+  const { data: exercises, error: exercisesError } = await supabase
+    .from("exercises")
+    .select("id, name, category, default_unit, created_by_user_id")
+    .order("category", { ascending: true })
+    .order("name", { ascending: true })
+    .returns<AssistanceExerciseRow[]>();
+
+  if (!exercisesError) {
+    const assistanceExercises = assistanceOnly(
+      exercises.map((exercise) => mapExercise(exercise, userId)),
+    );
+    return assistanceExercises.length ? assistanceExercises : confirmedAssistanceExercises;
+  }
+
+  const { data: baseExercises, error: baseError } = await supabase
+    .from("exercises")
+    .select("id, name, category, default_unit")
+    .order("category", { ascending: true })
+    .order("name", { ascending: true })
+    .returns<BaseExerciseRow[]>();
+
+  if (baseError) {
+    return confirmedAssistanceExercises;
+  }
+
+  const assistanceExercises = assistanceOnly(baseExercises.map(mapBaseExercise));
+  return assistanceExercises.length ? assistanceExercises : confirmedAssistanceExercises;
+}
+
 export async function fetchAssistanceLibrary(): Promise<
   ActionResult<AssistanceLibraryView>
 > {
@@ -170,26 +272,9 @@ export async function fetchAssistanceLibrary(): Promise<
     const supabase = await createClient();
     const user = await getUser(supabase);
 
-    const { data: exercises, error: exercisesError } = await supabase
-      .from("exercises")
-      .select("id, name, category, default_unit, created_by_user_id")
-      .order("category", { ascending: true })
-      .order("name", { ascending: true })
-      .returns<AssistanceExerciseRow[]>();
-
-    if (exercisesError) {
-      throw exercisesError;
-    }
-
     return success({
-      exercises: exercises
-        .filter(
-          (exercise) =>
-            assistanceCategories.includes(exercise.category ?? "") ||
-            exercise.created_by_user_id === user.id,
-        )
-        .map((exercise) => mapExercise(exercise, user.id)),
-      templates: await fetchTemplates(supabase),
+      exercises: await fetchExercises(supabase, user.id),
+      templates: await fetchTemplatesOrEmpty(supabase),
     });
   } catch (error) {
     return actionFailure(
@@ -225,6 +310,11 @@ export async function addCustomAssistanceExercise(input: {
     });
 
     if (error) {
+      if (needsAssistanceMigration(error)) {
+        return failure(
+          "Apply the assistance Supabase migration before adding custom exercises.",
+        );
+      }
       throw error;
     }
 
@@ -260,6 +350,12 @@ export async function createAssistanceTemplate(
       return failure("Select at least one assistance exercise.");
     }
 
+    if (exerciseIds.some((exerciseId) => exerciseId.startsWith("preset-"))) {
+      return failure(
+        "Apply the assistance Supabase migration before saving templates.",
+      );
+    }
+
     const supabase = await createClient();
     const user = await getUser(supabase);
 
@@ -273,6 +369,11 @@ export async function createAssistanceTemplate(
       .single<{ id: string }>();
 
     if (templateError) {
+      if (needsAssistanceMigration(templateError)) {
+        return failure(
+          "Apply the assistance Supabase migration before saving templates.",
+        );
+      }
       throw templateError;
     }
 
@@ -290,6 +391,11 @@ export async function createAssistanceTemplate(
       .insert(rows);
 
     if (exercisesError) {
+      if (needsAssistanceMigration(exercisesError)) {
+        return failure(
+          "Apply the assistance Supabase migration before saving templates.",
+        );
+      }
       throw exercisesError;
     }
 

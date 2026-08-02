@@ -796,6 +796,115 @@ button.complete {
   padding: 0 12px;
 }
 
+.workout-assistance-block {
+  display: grid;
+  gap: 14px;
+}
+
+.workout-assistance-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: start;
+  border: 1px solid #d8d0c2;
+  background: #fffdf8;
+  padding: 14px;
+}
+
+.workout-assistance-panel h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.workout-assistance-panel p {
+  margin: 0;
+  color: #5f5b53;
+  font-size: 12px;
+}
+
+.workout-assistance-panel p + p {
+  margin-top: 12px;
+}
+
+.workout-assistance-actions {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 8px;
+}
+
+.workout-assistance-actions select {
+  min-width: 220px;
+}
+
+.workout-assistance-actions button {
+  border-color: #8a2d30;
+  background: #8a2d30;
+}
+
+.workout-assistance-list {
+  display: grid;
+  gap: 8px;
+}
+
+.workout-assistance-card {
+  display: grid;
+  gap: 12px;
+  background: #faf6ed;
+  padding: 10px;
+}
+
+.workout-assistance-card-head {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(180px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.workout-assistance-card-head input {
+  min-height: 34px;
+}
+
+.icon-button {
+  min-height: 34px;
+  width: 38px;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.assistance-working-sets {
+  display: grid;
+  gap: 4px;
+}
+
+.assistance-sets-head {
+  gap: 18px;
+  padding-bottom: 6px;
+}
+
+.assistance-set-row {
+  min-height: 34px;
+  background: transparent;
+  padding: 2px 0;
+}
+
+.assistance-set-row input[type="number"] {
+  width: 96px;
+}
+
+.workout-notes-field {
+  color: #181817;
+}
+
+.workout-notes-field textarea {
+  min-height: 92px;
+  resize: vertical;
+  border: 1px solid #cbc3b5;
+  background: #fffdf8;
+  color: #181817;
+  padding: 10px;
+}
+
 .sticky-context {
   position: sticky;
   top: 58px;
@@ -1173,6 +1282,9 @@ button.danger {
   .assist-custom-form,
   .assist-grid,
   .assist-exercise-grid,
+  .workout-assistance-panel,
+  .workout-assistance-actions,
+  .workout-assistance-card-head,
   .tracker-session-card,
   .tracker-exercise-head,
   .tracker-summary-strip,
@@ -1203,6 +1315,11 @@ button.danger {
 
   .assist-template-panel {
     position: static;
+  }
+
+  .workout-assistance-actions select {
+    min-width: 0;
+    width: 100%;
   }
 
   .frequency-bars {
