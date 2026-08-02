@@ -895,6 +895,153 @@ button.danger {
   gap: 16px;
 }
 
+.assist-page {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 20px;
+  display: grid;
+  gap: 16px;
+}
+
+.assist-title h2 {
+  margin: 4px 0 0;
+  font-size: 30px;
+  line-height: 1.05;
+}
+
+.assist-custom-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(160px, 1fr) auto;
+  gap: 10px;
+  border: 1px solid #d8d0c2;
+  background: #fffdf8;
+  padding: 14px;
+}
+
+.assist-custom-form button,
+.assist-template-form button {
+  border-color: #8a2d30;
+  background: #8a2d30;
+}
+
+.assist-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 14px;
+  align-items: start;
+}
+
+.assist-library {
+  display: grid;
+  gap: 14px;
+}
+
+.assist-category,
+.assist-template-panel {
+  border: 1px solid #d8d0c2;
+  background: #fffdf8;
+}
+
+.assist-category {
+  padding: 14px;
+}
+
+.assist-category h3,
+.assist-template-panel h3 {
+  margin: 0 0 12px;
+  font-size: 15px;
+}
+
+.assist-exercise-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.assist-exercise-option {
+  min-height: 32px;
+  display: flex;
+  grid-template-columns: none;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  background: #faf6ed;
+  padding: 6px;
+  color: #181817;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.assist-exercise-option input {
+  min-height: auto;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+}
+
+.assist-exercise-option span {
+  flex: 1;
+}
+
+.assist-exercise-option small {
+  color: #8a2d30;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.assist-template-panel {
+  position: sticky;
+  top: 16px;
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+}
+
+.assist-template-form {
+  display: grid;
+  gap: 10px;
+}
+
+.assist-template-form p {
+  margin: 0;
+  color: #69635a;
+  font-size: 12px;
+}
+
+.assist-template-list {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid #ebe4d8;
+  padding-top: 14px;
+}
+
+.assist-template-card {
+  display: grid;
+  gap: 6px;
+  background: #faf6ed;
+  padding: 10px;
+}
+
+.assist-template-card span {
+  color: #69635a;
+  font-size: 12px;
+}
+
+.assist-template-card div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.assist-template-card small {
+  border: 1px solid #d8d0c2;
+  background: #fffdf8;
+  padding: 4px 6px;
+  color: #5f5b53;
+  font-size: 11px;
+}
+
 .settings-page {
   max-width: 1120px;
   margin: 0 auto;
@@ -1023,6 +1170,9 @@ button.danger {
   .metric-detail,
   .dashboard-panels,
   .mini-chart-grid,
+  .assist-custom-form,
+  .assist-grid,
+  .assist-exercise-grid,
   .tracker-session-card,
   .tracker-exercise-head,
   .tracker-summary-strip,
@@ -1045,6 +1195,14 @@ button.danger {
 
   .dashboard-hero button {
     width: 100%;
+  }
+
+  .assist-page {
+    padding: 14px;
+  }
+
+  .assist-template-panel {
+    position: static;
   }
 
   .frequency-bars {

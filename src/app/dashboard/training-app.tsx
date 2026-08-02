@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import {
+  addCustomAssistanceExercise,
+  createAssistanceTemplate,
+} from "@/app/assist/actions";
 import { logOut } from "@/app/auth/actions";
 import {
   calculateNextWorkout,
@@ -13,6 +17,7 @@ import {
 } from "@/app/workouts/actions";
 import { DataOwnershipPanel } from "@/app/dashboard/data-ownership-panel";
 import type {
+  AssistanceLibraryView,
   ChartDataPoint,
   NextWorkoutPreview,
   WorkoutExerciseView,
@@ -41,6 +46,7 @@ type TrainingAppProps = {
   nextWorkout: NextWorkoutPreview | null;
   history: WorkoutView[];
   chartData: ChartDataPoint[];
+  assistanceLibrary: AssistanceLibraryView;
   workoutsForDataPanel: WorkoutSummary[];
   errors: string[];
 };
@@ -343,6 +349,10 @@ export function TrainingApp(props: TrainingAppProps) {
   const [selectedKpi, setSelectedKpi] = useState<KpiKey>("lastWorkout");
   const [workout, setWorkout] = useState(props.openWorkout);
   const [profile, setProfile] = useState(props.profile);
+  const [assistanceLibrary, setAssistanceLibrary] = useState(
+    props.assistanceLibrary,
+  );
+  const [selectedAssistanceIds, setSelectedAssistanceIds] = useState<string[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [restTimer, setRestTimer] = useState<RestTimerState>(defaultRestTimer);
@@ -459,6 +469,32 @@ export function TrainingApp(props: TrainingAppProps) {
     months[key] = (months[key] ?? 0) + 1;
     return months;
   }, {});
+  const assistanceByCategory = assistanceLibrary.exercises.reduce<
+    Record<string, typeof assistanceLibrary.exercises>
+  >((groups, exercise) => {
+    const category = exercise.category || "Custom";
+    groups[category] = [...(groups[category] ?? []), exercise];
+    return groups;
+  }, {});
+  const orderedAssistanceCategories = Object.keys(assistanceByCategory).sort(
+    (left, right) => {
+      const categoryOrder = [
+        "Arms",
+        "Back",
+        "Chest",
+        "Core",
+        "Lower Body",
+        "Shoulders",
+        "Custom",
+      ];
+      const leftIndex = categoryOrder.indexOf(left);
+      const rightIndex = categoryOrder.indexOf(right);
+      if (leftIndex === -1 && rightIndex === -1) return left.localeCompare(right);
+      if (leftIndex === -1) return 1;
+      if (rightIndex === -1) return -1;
+      return leftIndex - rightIndex;
+    },
+  );
 
   function runWorkoutAction(action: () => Promise<{ ok: true; data: WorkoutView } | { ok: false; error: string }>) {
     setMessage(null);
@@ -562,6 +598,51 @@ export function TrainingApp(props: TrainingAppProps) {
       }
       setMessage(
         result.ok ? `Metric setting saved at ${formatSaveTimestamp()}.` : result.error,
+      );
+    });
+  }
+
+  function toggleAssistanceExercise(exerciseId: string, checked: boolean) {
+    setSelectedAssistanceIds((current) =>
+      checked
+        ? [...new Set([...current, exerciseId])]
+        : current.filter((id) => id !== exerciseId),
+    );
+  }
+
+  function addCustomExercise(formData: FormData) {
+    setMessage(null);
+    const name = String(formData.get("customExercise") ?? "");
+    const category = String(formData.get("customCategory") ?? "");
+
+    startTransition(async () => {
+      const result = await addCustomAssistanceExercise({ name, category });
+      if (result.ok) {
+        setAssistanceLibrary(result.data);
+      }
+      setMessage(
+        result.ok ? `Custom exercise saved at ${formatSaveTimestamp()}.` : result.error,
+      );
+    });
+  }
+
+  function saveAssistanceTemplate(formData: FormData) {
+    setMessage(null);
+    const name = String(formData.get("templateName") ?? "");
+
+    startTransition(async () => {
+      const result = await createAssistanceTemplate({
+        name,
+        exerciseIds: selectedAssistanceIds,
+      });
+      if (result.ok) {
+        setAssistanceLibrary(result.data);
+        setSelectedAssistanceIds([]);
+      }
+      setMessage(
+        result.ok
+          ? `Assistance template saved at ${formatSaveTimestamp()}.`
+          : result.error,
       );
     });
   }
@@ -969,10 +1050,99 @@ export function TrainingApp(props: TrainingAppProps) {
         ) : null}
 
         {tab === "assist" ? (
-          <section className="panel-list">
-            <h2>Assist</h2>
-            <div className="panel">
-              <p className="muted">Training assistance will collect rest guidance, missed-rep context, and next-session suggestions here.</p>
+          <section className="assist-page">
+            <div className="assist-title">
+              <p className="brand">ASSISTANCE</p>
+              <h2>Exercise library</h2>
+            </div>
+
+            <form action={addCustomExercise} className="assist-custom-form">
+              <input
+                aria-label="Custom exercise"
+                name="customExercise"
+                placeholder="Custom exercise"
+              />
+              <input
+                aria-label="Category"
+                name="customCategory"
+                placeholder="Category"
+              />
+              <button disabled={isPending} type="submit">
+                Add custom
+              </button>
+            </form>
+
+            <div className="assist-grid">
+              <div className="assist-library">
+                {orderedAssistanceCategories.length ? (
+                  orderedAssistanceCategories.map((category) => (
+                    <section className="assist-category" key={category}>
+                      <h3>{category}</h3>
+                      <div className="assist-exercise-grid">
+                        {assistanceByCategory[category].map((exercise) => (
+                          <label className="assist-exercise-option" key={exercise.id}>
+                            <input
+                              checked={selectedAssistanceIds.includes(exercise.id)}
+                              onChange={(event) =>
+                                toggleAssistanceExercise(
+                                  exercise.id,
+                                  event.currentTarget.checked,
+                                )
+                              }
+                              type="checkbox"
+                            />
+                            <span>{exercise.name}</span>
+                            {exercise.isCustom ? <small>Custom</small> : null}
+                          </label>
+                        ))}
+                      </div>
+                    </section>
+                  ))
+                ) : (
+                  <div className="panel">
+                    <p className="muted">
+                      Assistance exercises will appear after the Supabase
+                      migration has been applied.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <aside className="assist-template-panel">
+                <form action={saveAssistanceTemplate} className="assist-template-form">
+                  <h3>Create template</h3>
+                  <input
+                    aria-label="Template name"
+                    name="templateName"
+                    placeholder="Template name"
+                  />
+                  <p>{selectedAssistanceIds.length} selected</p>
+                  <button disabled={isPending || selectedAssistanceIds.length === 0}>
+                    Save template
+                  </button>
+                </form>
+
+                <div className="assist-template-list">
+                  <h3>Saved templates</h3>
+                  {assistanceLibrary.templates.length ? (
+                    assistanceLibrary.templates.map((template) => (
+                      <article className="assist-template-card" key={template.id}>
+                        <strong>{template.name}</strong>
+                        <span>{template.exercises.length} exercises</span>
+                        <div>
+                          {template.exercises.map((exercise) => (
+                            <small key={exercise.id}>
+                              {exercise.exerciseName} {exercise.targetSets}x{exercise.targetReps}
+                            </small>
+                          ))}
+                        </div>
+                      </article>
+                    ))
+                  ) : (
+                    <p className="muted">No assistance templates saved yet.</p>
+                  )}
+                </div>
+              </aside>
             </div>
           </section>
         ) : null}

@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { fetchAssistanceLibrary } from "@/app/assist/actions";
 import {
   calculateNextWorkout,
   fetchChartData,
@@ -24,12 +25,19 @@ export default async function DashboardPage() {
     .select("display_name, unit_system")
     .eq("user_id", userData.user?.id ?? claimsData.claims.sub)
     .maybeSingle<{ display_name: string | null; unit_system: "metric" | "imperial" }>();
-  const [openWorkoutResult, nextWorkoutResult, historyResult, chartResult] =
+  const [
+    openWorkoutResult,
+    nextWorkoutResult,
+    historyResult,
+    chartResult,
+    assistanceResult,
+  ] =
     await Promise.all([
       fetchOpenWorkout(),
       calculateNextWorkout(),
       fetchHistory(20),
       fetchChartData(),
+      fetchAssistanceLibrary(),
     ]);
   const history = historyResult.ok ? historyResult.data : [];
   const errors = [
@@ -37,6 +45,7 @@ export default async function DashboardPage() {
     nextWorkoutResult.ok ? null : nextWorkoutResult.error,
     historyResult.ok ? null : historyResult.error,
     chartResult.ok ? null : chartResult.error,
+    assistanceResult.ok ? null : assistanceResult.error,
   ].filter((error): error is string => Boolean(error));
   const workoutsForDataPanel = history.map((workout) => ({
     id: workout.id,
@@ -58,6 +67,11 @@ export default async function DashboardPage() {
       nextWorkout={nextWorkoutResult.ok ? nextWorkoutResult.data : null}
       history={history}
       chartData={chartResult.ok ? chartResult.data : []}
+      assistanceLibrary={
+        assistanceResult.ok
+          ? assistanceResult.data
+          : { exercises: [], templates: [] }
+      }
       workoutsForDataPanel={workoutsForDataPanel}
       errors={errors}
     />

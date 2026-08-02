@@ -52,6 +52,42 @@ export type UserSettingsInput = {
   unitSystem?: "metric" | "imperial";
 };
 
+export type AssistanceExerciseView = {
+  id: string;
+  name: string;
+  category: string;
+  defaultUnit: LoadUnit;
+  isCustom: boolean;
+};
+
+export type AssistanceTemplateExerciseView = {
+  id: string;
+  exerciseId: string;
+  exerciseName: string;
+  category: string;
+  sortOrder: number;
+  targetSets: number;
+  targetReps: number;
+};
+
+export type AssistanceTemplateView = {
+  id: string;
+  name: string;
+  exercises: AssistanceTemplateExerciseView[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AssistanceLibraryView = {
+  exercises: AssistanceExerciseView[];
+  templates: AssistanceTemplateView[];
+};
+
+export type CreateAssistanceTemplateInput = {
+  name: string;
+  exerciseIds: string[];
+};
+
 export type WorkoutSetView = {
   id: string;
   setNumber: number;
