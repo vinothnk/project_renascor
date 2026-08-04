@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { fetchAssistanceLibrary } from "@/app/assist/actions";
+import { fetchBodyweightEntries } from "@/app/bodyweight/actions";
 import {
   calculateNextWorkout,
   fetchChartData,
@@ -33,6 +34,7 @@ export default async function DashboardPage() {
     chartResult,
     assistanceResult,
     workingWeightsResult,
+    bodyweightResult,
   ] =
     await Promise.all([
       fetchOpenWorkout(),
@@ -41,6 +43,7 @@ export default async function DashboardPage() {
       fetchChartData(),
       fetchAssistanceLibrary(),
       fetchWorkingWeights(),
+      fetchBodyweightEntries(),
     ]);
   const history = historyResult.ok ? historyResult.data : [];
   const errors = [
@@ -50,6 +53,7 @@ export default async function DashboardPage() {
     chartResult.ok ? null : chartResult.error,
     assistanceResult.ok ? null : assistanceResult.error,
     workingWeightsResult.ok ? null : workingWeightsResult.error,
+    bodyweightResult.ok ? null : bodyweightResult.error,
   ].filter((error): error is string => Boolean(error));
   const workoutsForDataPanel = history.map((workout) => ({
     id: workout.id,
@@ -72,6 +76,7 @@ export default async function DashboardPage() {
       history={history}
       chartData={chartResult.ok ? chartResult.data : []}
       workingWeights={workingWeightsResult.ok ? workingWeightsResult.data : []}
+      bodyweightEntries={bodyweightResult.ok ? bodyweightResult.data : []}
       assistanceLibrary={
         assistanceResult.ok
           ? assistanceResult.data

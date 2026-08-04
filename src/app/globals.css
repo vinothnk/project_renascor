@@ -1095,6 +1095,142 @@ button.danger {
   padding: 0 18px;
 }
 
+.bodyweight-page {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 20px;
+  display: grid;
+  gap: 18px;
+}
+
+.bodyweight-title h2 {
+  margin: 4px 0 0;
+  font-size: 30px;
+  line-height: 1.05;
+}
+
+.bodyweight-entry-form {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.9fr) minmax(160px, 1fr) auto;
+  gap: 10px;
+  border: 1px solid #d8d0c2;
+  background: #fffdf8;
+  padding: 12px;
+}
+
+.bodyweight-entry-form input {
+  min-height: 36px;
+}
+
+.bodyweight-entry-form button {
+  min-height: 36px;
+  border-color: #8a2d30;
+  background: #8a2d30;
+}
+
+.bodyweight-chart-panel {
+  border: 1px solid #d8d0c2;
+  background: #fffdf8;
+  padding: 16px;
+}
+
+.bodyweight-chart {
+  position: relative;
+  min-height: 274px;
+  padding: 8px 0 28px 64px;
+}
+
+.bodyweight-chart svg {
+  width: 100%;
+  height: 236px;
+  display: block;
+  overflow: visible;
+}
+
+.bodyweight-chart-area {
+  fill: #eadfcb;
+  opacity: 0.85;
+}
+
+.bodyweight-chart-line {
+  fill: none;
+  stroke: #8a2d30;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+}
+
+.bodyweight-chart-grid {
+  stroke: #cfc5b7;
+  stroke-dasharray: 2 3;
+  stroke-width: 0.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.bodyweight-y-axis {
+  position: absolute;
+  top: 0;
+  bottom: 28px;
+  left: 0;
+  width: 54px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  color: #69635a;
+  font-size: 11px;
+  text-align: right;
+}
+
+.bodyweight-x-axis {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 64px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #69635a;
+  font-size: 10px;
+  overflow: hidden;
+}
+
+.bodyweight-x-axis span {
+  min-width: 64px;
+  white-space: nowrap;
+}
+
+.bodyweight-empty-chart {
+  min-height: 236px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed #d8d0c2;
+  color: #69635a;
+}
+
+.bodyweight-entry-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.bodyweight-entry-card {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #d8d0c2;
+  background: #fffdf8;
+  padding: 14px;
+}
+
+.bodyweight-entry-card strong {
+  font-size: 15px;
+}
+
+.bodyweight-entry-card span {
+  color: #69635a;
+  font-size: 12px;
+}
+
 .assist-page {
   max-width: 1120px;
   margin: 0 auto;
@@ -1379,6 +1515,8 @@ button.danger {
   .working-weight-card,
   .working-weight-controls,
   .working-weight-fields,
+  .bodyweight-entry-form,
+  .bodyweight-entry-grid,
   .tracker-session-card,
   .tracker-exercise-head,
   .tracker-summary-strip,

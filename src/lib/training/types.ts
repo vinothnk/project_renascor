@@ -70,6 +70,19 @@ export type UpdateWorkingWeightInput = {
   failures: number;
 };
 
+export type BodyweightEntryView = {
+  id: string;
+  weight: number;
+  unit: LoadUnit;
+  measuredOn: string;
+  createdAt: string;
+};
+
+export type AddBodyweightEntryInput = {
+  weight: number;
+  measuredOn: string;
+};
+
 export type AssistanceExerciseView = {
   id: string;
   name: string;

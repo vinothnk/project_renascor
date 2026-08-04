@@ -6,6 +6,7 @@ import {
   createAssistanceTemplate,
 } from "@/app/assist/actions";
 import { logOut } from "@/app/auth/actions";
+import { addBodyweightEntry } from "@/app/bodyweight/actions";
 import {
   calculateNextWorkout,
   completeWorkout,
@@ -19,6 +20,7 @@ import {
 import { DataOwnershipPanel } from "@/app/dashboard/data-ownership-panel";
 import type {
   AssistanceLibraryView,
+  BodyweightEntryView,
   ChartDataPoint,
   NextWorkoutPreview,
   WorkingWeightView,
@@ -49,6 +51,7 @@ type TrainingAppProps = {
   history: WorkoutView[];
   chartData: ChartDataPoint[];
   workingWeights: WorkingWeightView[];
+  bodyweightEntries: BodyweightEntryView[];
   assistanceLibrary: AssistanceLibraryView;
   workoutsForDataPanel: WorkoutSummary[];
   errors: string[];
@@ -61,7 +64,7 @@ type Tab =
   | "assist"
   | "history"
   | "charts"
-  | "weight"
+  | "bodyweight"
   | "notes"
   | "settings";
 
@@ -124,7 +127,7 @@ const navItems: NavItem[] = [
   { tab: "assist", label: "Assist", icon: "spark" },
   { tab: "history", label: "History", icon: "history" },
   { tab: "charts", label: "Analytics", icon: "chart" },
-  { tab: "weight", label: "Weight", icon: "scale" },
+  { tab: "bodyweight", label: "Bodyweight", icon: "scale" },
   { tab: "notes", label: "Notes", icon: "note" },
   { tab: "settings", label: "Settings", icon: "settings" },
 ];
@@ -152,6 +155,10 @@ function formatIsoDate(value: string | null) {
     month: "2-digit",
     day: "2-digit",
   }).format(new Date(value));
+}
+
+function formatInputDate(value: Date) {
+  return value.toISOString().slice(0, 10);
 }
 
 function formatSaveTimestamp() {
@@ -290,6 +297,60 @@ function MiniLineChart({ points }: { points: ChartDataPoint[] }) {
   );
 }
 
+function BodyweightTrendChart({ entries }: { entries: BodyweightEntryView[] }) {
+  if (entries.length === 0) {
+    return <div className="bodyweight-empty-chart">No bodyweight data yet</div>;
+  }
+
+  const sorted = [...entries].sort(
+    (left, right) =>
+      new Date(left.measuredOn).getTime() - new Date(right.measuredOn).getTime(),
+  );
+  const weights = sorted.map((entry) => entry.weight);
+  const minWeight = Math.min(...weights);
+  const maxWeight = Math.max(...weights);
+  const min = Math.max(0, Math.floor((minWeight - 2) / 5) * 5);
+  const max = Math.ceil((maxWeight + 2) / 5) * 5 || 100;
+  const range = Math.max(1, max - min);
+  const points = sorted.map((entry, index) => {
+    const x = sorted.length === 1 ? 50 : (index / (sorted.length - 1)) * 100;
+    const y = 100 - ((entry.weight - min) / range) * 100;
+    return { x, y, entry };
+  });
+  const line = points.map((point) => `${point.x},${point.y}`).join(" ");
+  const area = `0,100 ${line} 100,100`;
+  const yTicks = [max, min + range * 0.75, min + range * 0.5, min + range * 0.25, min];
+  const tickStep = Math.max(1, Math.ceil(sorted.length / 8));
+  const xTicks = sorted.filter(
+    (_entry, index) => index % tickStep === 0 || index === sorted.length - 1,
+  );
+
+  return (
+    <div className="bodyweight-chart">
+      <svg aria-label="Bodyweight trend chart" preserveAspectRatio="none" viewBox="0 0 100 100">
+        <polygon className="bodyweight-chart-area" points={area} />
+        {[0, 25, 50, 75, 100].map((y) => (
+          <line className="bodyweight-chart-grid" key={`y-${y}`} x1="0" x2="100" y1={y} y2={y} />
+        ))}
+        {[0, 14.285, 28.57, 42.855, 57.14, 71.425, 85.71, 100].map((x) => (
+          <line className="bodyweight-chart-grid" key={`x-${x}`} x1={x} x2={x} y1="0" y2="100" />
+        ))}
+        <polyline className="bodyweight-chart-line" points={line} />
+      </svg>
+      <div className="bodyweight-y-axis">
+        {yTicks.map((tick) => (
+          <span key={tick}>{Math.round(tick)}</span>
+        ))}
+      </div>
+      <div className="bodyweight-x-axis">
+        {xTicks.map((entry) => (
+          <span key={entry.id}>{entry.measuredOn}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function NavIcon({ icon }: { icon: NavItem["icon"] }) {
   const paths: Record<NavItem["icon"], React.ReactNode> = {
     home: <path d="M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z" />,
@@ -402,6 +463,9 @@ export function TrainingApp(props: TrainingAppProps) {
         },
       ]),
     ),
+  );
+  const [bodyweightEntries, setBodyweightEntries] = useState(
+    props.bodyweightEntries,
   );
   const [selectedAssistanceIds, setSelectedAssistanceIds] = useState<string[]>([]);
   const [selectedWorkoutAssistanceId, setSelectedWorkoutAssistanceId] =
@@ -611,6 +675,24 @@ export function TrainingApp(props: TrainingAppProps) {
 
       setMessage(
         result.ok ? `Working weight saved at ${formatSaveTimestamp()}.` : result.error,
+      );
+    });
+  }
+
+  function saveBodyweightEntry(formData: FormData) {
+    setMessage(null);
+    const weight = Number(formData.get("bodyweight") ?? 0);
+    const measuredOn = String(formData.get("measuredOn") ?? "");
+
+    startTransition(async () => {
+      const result = await addBodyweightEntry({ weight, measuredOn });
+
+      if (result.ok) {
+        setBodyweightEntries(result.data);
+      }
+
+      setMessage(
+        result.ok ? `Bodyweight saved at ${formatSaveTimestamp()}.` : result.error,
       );
     });
   }
@@ -1638,11 +1720,54 @@ export function TrainingApp(props: TrainingAppProps) {
           </section>
         ) : null}
 
-        {tab === "weight" ? (
-          <section className="panel-list">
-            <h2>Body Weight</h2>
-            <div className="panel">
-              <p className="muted">Body-weight tracking is reserved here so it can sit beside barbell progress without crowding workout logging.</p>
+        {tab === "bodyweight" ? (
+          <section className="bodyweight-page">
+            <div className="bodyweight-title">
+              <p className="brand">BODY WEIGHT</p>
+              <h2>Trend log</h2>
+            </div>
+
+            <form action={saveBodyweightEntry} className="bodyweight-entry-form">
+              <input
+                aria-label="Bodyweight"
+                defaultValue={bodyweightEntries[0]?.weight ?? ""}
+                inputMode="decimal"
+                min="0"
+                name="bodyweight"
+                placeholder="96.8"
+                step="0.1"
+                type="number"
+              />
+              <input
+                aria-label="Measured date"
+                defaultValue={formatInputDate(new Date())}
+                name="measuredOn"
+                type="date"
+              />
+              <button disabled={isPending} type="submit">
+                Add
+              </button>
+            </form>
+
+            <section className="bodyweight-chart-panel">
+              <BodyweightTrendChart entries={bodyweightEntries} />
+            </section>
+
+            <div className="bodyweight-entry-grid">
+              {bodyweightEntries.length ? (
+                bodyweightEntries.slice(0, 12).map((entry) => (
+                  <article className="bodyweight-entry-card" key={entry.id}>
+                    <strong>
+                      {entry.weight} {entry.unit}
+                    </strong>
+                    <span>{entry.measuredOn}</span>
+                  </article>
+                ))
+              ) : (
+                <div className="panel">
+                  <p className="muted">Add your first bodyweight entry to start the trend.</p>
+                </div>
+              )}
             </div>
           </section>
         ) : null}
