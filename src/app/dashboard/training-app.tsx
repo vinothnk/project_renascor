@@ -14,12 +14,14 @@ import {
   pauseWorkoutSession,
   updateSetResult,
   updateUserSettings,
+  updateWorkingWeight,
 } from "@/app/workouts/actions";
 import { DataOwnershipPanel } from "@/app/dashboard/data-ownership-panel";
 import type {
   AssistanceLibraryView,
   ChartDataPoint,
   NextWorkoutPreview,
+  WorkingWeightView,
   WorkoutExerciseView,
   WorkoutSetView,
   WorkoutView,
@@ -46,6 +48,7 @@ type TrainingAppProps = {
   nextWorkout: NextWorkoutPreview | null;
   history: WorkoutView[];
   chartData: ChartDataPoint[];
+  workingWeights: WorkingWeightView[];
   assistanceLibrary: AssistanceLibraryView;
   workoutsForDataPanel: WorkoutSummary[];
   errors: string[];
@@ -95,6 +98,13 @@ type WorkoutAssistanceItem = {
   sets: WorkoutAssistanceSet[];
 };
 
+type WorkingWeightDraft = {
+  currentLoad: string;
+  nextLoad: string;
+  streak: string;
+  failures: string;
+};
+
 const REST_INTERVAL_SECONDS = 90;
 const MAX_REST_SECONDS = 180;
 
@@ -132,6 +142,15 @@ function formatShortDate(value: string | null) {
   return new Intl.DateTimeFormat(undefined, {
     month: "short",
     day: "numeric",
+  }).format(new Date(value));
+}
+
+function formatIsoDate(value: string | null) {
+  if (!value) return "None";
+  return new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
   }).format(new Date(value));
 }
 
@@ -368,6 +387,22 @@ export function TrainingApp(props: TrainingAppProps) {
   const [assistanceLibrary, setAssistanceLibrary] = useState(
     props.assistanceLibrary,
   );
+  const [workingWeights, setWorkingWeights] = useState(props.workingWeights);
+  const [workingWeightDrafts, setWorkingWeightDrafts] = useState<
+    Record<string, WorkingWeightDraft>
+  >(() =>
+    Object.fromEntries(
+      props.workingWeights.map((weight) => [
+        weight.exerciseId,
+        {
+          currentLoad: String(weight.currentLoad),
+          nextLoad: String(weight.nextLoad),
+          streak: String(weight.streak),
+          failures: String(weight.failures),
+        },
+      ]),
+    ),
+  );
   const [selectedAssistanceIds, setSelectedAssistanceIds] = useState<string[]>([]);
   const [selectedWorkoutAssistanceId, setSelectedWorkoutAssistanceId] =
     useState("");
@@ -522,6 +557,63 @@ export function TrainingApp(props: TrainingAppProps) {
       label: `${category} - ${exercise.name}`,
     })),
   );
+
+  function updateWorkingWeightDraft(
+    exerciseId: string,
+    field: keyof WorkingWeightDraft,
+    value: string,
+  ) {
+    setWorkingWeightDrafts((current) => {
+      const existing = current[exerciseId] ?? {
+        currentLoad: "0",
+        nextLoad: "0",
+        streak: "0",
+        failures: "0",
+      };
+
+      return {
+        ...current,
+        [exerciseId]: {
+          ...existing,
+          [field]: value,
+        },
+      };
+    });
+  }
+
+  function saveWorkingWeight(weight: WorkingWeightView) {
+    const draft = workingWeightDrafts[weight.exerciseId];
+
+    setMessage(null);
+    startTransition(async () => {
+      const result = await updateWorkingWeight({
+        exerciseId: weight.exerciseId,
+        nextLoad: Number(draft?.nextLoad ?? weight.nextLoad) || 0,
+        failures: Number(draft?.failures ?? weight.failures) || 0,
+      });
+
+      if (result.ok) {
+        setWorkingWeights(result.data);
+        setWorkingWeightDrafts(
+          Object.fromEntries(
+            result.data.map((item) => [
+              item.exerciseId,
+              {
+                currentLoad: String(item.currentLoad),
+                nextLoad: String(item.nextLoad),
+                streak: String(item.streak),
+                failures: String(item.failures),
+              },
+            ]),
+          ),
+        );
+      }
+
+      setMessage(
+        result.ok ? `Working weight saved at ${formatSaveTimestamp()}.` : result.error,
+      );
+    });
+  }
 
   function runWorkoutAction(action: () => Promise<{ ok: true; data: WorkoutView } | { ok: false; error: string }>) {
     setMessage(null);
@@ -1281,16 +1373,120 @@ export function TrainingApp(props: TrainingAppProps) {
         ) : null}
 
         {tab === "weights" ? (
-          <section className="panel-list">
-            <h2>Weights</h2>
-            <div className="panel">
-              <p className="muted">Your current training loads are shown in the next workout preview and imported history.</p>
-              {props.nextWorkout?.exercises.map((exercise) => (
-                <div className="metric-row" key={exercise.exerciseId}>
-                  <span>{exercise.exerciseName}</span>
-                  <strong>{exercise.plannedLoad} {exercise.unit}</strong>
+          <section className="weights-page">
+            <div className="weights-title">
+              <p className="brand">PROGRAM</p>
+              <h2>Current working weights</h2>
+            </div>
+
+            <div className="working-weight-list">
+              {workingWeights.length ? (
+                workingWeights.map((weight) => {
+                  const draft = workingWeightDrafts[weight.exerciseId] ?? {
+                    currentLoad: String(weight.currentLoad),
+                    nextLoad: String(weight.nextLoad),
+                    streak: String(weight.streak),
+                    failures: String(weight.failures),
+                  };
+
+                  return (
+                    <article className="working-weight-card" key={weight.exerciseId}>
+                      <div className="working-weight-summary">
+                        <div>
+                          <h3>{weight.exerciseName}</h3>
+                          <p>
+                            Last: {formatIsoDate(weight.lastCompletedAt)}
+                            {weight.lastOutcome !== "none" ? (
+                              <>
+                                {" "}
+                                - <strong>{weight.lastOutcome.toUpperCase()}</strong>
+                              </>
+                            ) : null}
+                          </p>
+                        </div>
+                        <p>
+                          Future workouts use {draft.nextLoad || "0"} {weight.unit}.
+                        </p>
+                      </div>
+
+                      <div className="working-weight-controls">
+                        <div className="working-weight-fields">
+                          <label>
+                            Current
+                            <input
+                              aria-label={`${weight.exerciseName} current load`}
+                              inputMode="decimal"
+                              min="0"
+                              readOnly
+                              type="number"
+                              value={draft.currentLoad}
+                            />
+                          </label>
+                          <label>
+                            Next
+                            <input
+                              aria-label={`${weight.exerciseName} next load`}
+                              inputMode="decimal"
+                              min="0"
+                              onChange={(event) =>
+                                updateWorkingWeightDraft(
+                                  weight.exerciseId,
+                                  "nextLoad",
+                                  event.currentTarget.value,
+                                )
+                              }
+                              type="number"
+                              value={draft.nextLoad}
+                            />
+                          </label>
+                          <label>
+                            Streak
+                            <input
+                              aria-label={`${weight.exerciseName} success streak`}
+                              inputMode="numeric"
+                              min="0"
+                              readOnly
+                              type="number"
+                              value={draft.streak}
+                            />
+                          </label>
+                          <label>
+                            Failures
+                            <input
+                              aria-label={`${weight.exerciseName} failures`}
+                              inputMode="numeric"
+                              min="0"
+                              onChange={(event) =>
+                                updateWorkingWeightDraft(
+                                  weight.exerciseId,
+                                  "failures",
+                                  event.currentTarget.value,
+                                )
+                              }
+                              type="number"
+                              value={draft.failures}
+                            />
+                          </label>
+                        </div>
+                        <button
+                          disabled={isPending}
+                          onClick={() => saveWorkingWeight(weight)}
+                          type="button"
+                        >
+                          Save
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })
+              ) : (
+                <div className="panel">
+                  <p className="muted">
+                    Working weights will appear after the StrongLifts program is
+                    available for this account.
+                  </p>
                 </div>
-              ))}
+              )}
             </div>
           </section>
         ) : null}

@@ -22,7 +22,9 @@ import type {
   RestTimerInput,
   SetResultInput,
   SetStatus,
+  UpdateWorkingWeightInput,
   UserSettingsInput,
+  WorkingWeightView,
   WorkoutExerciseStatus,
   WorkoutStatus,
   WorkoutView,
@@ -71,6 +73,11 @@ type ProgramExerciseRuleRow = {
   increment: number | string;
   deload_percent: number | string;
   failures_before_deload: number;
+};
+
+type ProgramExerciseWeightRow = {
+  exercise_id: string;
+  increment: number | string;
 };
 
 type WorkoutSessionRow = {
@@ -1224,6 +1231,195 @@ export async function calculateNextWorkout(): Promise<
     });
   } catch (error) {
     return actionFailure(error, "workout.next.calculate.failed", "calculateNextWorkout", "Could not calculate the next workout.");
+  }
+}
+
+function getWorkoutExerciseOutcome(exercise: WorkoutView["exercises"][number]) {
+  return completedAllPrescribedReps(
+    exercise.sets.map((set) => ({
+      status: set.status,
+      completedReps: set.completedReps,
+      targetReps: set.targetReps,
+    })),
+  );
+}
+
+export async function fetchWorkingWeights(): Promise<ActionResult<WorkingWeightView[]>> {
+  try {
+    const supabase = await createClient();
+    const user = await getUser(supabase);
+    const enrollment = await requireActiveEnrollment(supabase, user.id);
+    const { data: rules, error: rulesError } = await supabase
+      .from("program_exercises")
+      .select("exercise_id, increment")
+      .eq("program_id", enrollment.program_id)
+      .returns<ProgramExerciseWeightRow[]>();
+
+    if (rulesError) {
+      throw rulesError;
+    }
+
+    const exerciseIds = rules.map((rule) => rule.exercise_id);
+
+    if (exerciseIds.length === 0) {
+      return success([]);
+    }
+
+    const [exerciseNames, states] = await Promise.all([
+      getExercisesById(supabase, exerciseIds),
+      getTrainingStatesByExerciseId(supabase, enrollment.id, exerciseIds),
+    ]);
+    const { data: completedSessions, error: sessionsError } = await supabase
+      .from("workout_sessions")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("status", "completed")
+      .order("completed_at", { ascending: false })
+      .limit(100)
+      .returns<Array<{ id: string }>>();
+
+    if (sessionsError) {
+      throw sessionsError;
+    }
+
+    const completedWorkouts: WorkoutView[] = [];
+
+    for (const session of completedSessions) {
+      completedWorkouts.push(await getWorkoutView(supabase, session.id));
+    }
+
+    const weights = rules
+      .map((rule) => {
+        const history = completedWorkouts
+          .flatMap((workout) =>
+            workout.exercises
+              .filter((exercise) => exercise.exerciseId === rule.exercise_id)
+              .map((exercise) => ({
+                completedAt: workout.completedAt,
+                load: exercise.plannedLoad,
+                unit: exercise.unit,
+                success: getWorkoutExerciseOutcome(exercise),
+              })),
+          )
+          .filter((entry) => entry.completedAt)
+          .sort(
+            (left, right) =>
+              new Date(right.completedAt ?? 0).getTime() -
+              new Date(left.completedAt ?? 0).getTime(),
+          );
+        const latest = history[0] ?? null;
+        let streak = 0;
+
+        for (const entry of history) {
+          if (!entry.success) {
+            break;
+          }
+
+          streak += 1;
+        }
+
+        const state = states.get(rule.exercise_id);
+        const nextLoad = state ? toNumber(state.current_load) : latest?.load ?? 20;
+
+        return {
+          exerciseId: rule.exercise_id,
+          exerciseName: exerciseNames.get(rule.exercise_id)?.name ?? "Exercise",
+          currentLoad: latest?.load ?? nextLoad,
+          nextLoad,
+          unit: state?.unit ?? latest?.unit ?? "kg",
+          streak,
+          failures: state?.consecutive_failures ?? 0,
+          lastCompletedAt: latest?.completedAt ?? null,
+          lastOutcome: latest ? (latest.success ? "success" : "failure") : "none",
+        } satisfies WorkingWeightView;
+      })
+      .sort((left, right) => left.exerciseName.localeCompare(right.exerciseName));
+
+    return success(weights);
+  } catch (error) {
+    return actionFailure(
+      error,
+      "workout.weights.fetch.failed",
+      "fetchWorkingWeights",
+      "Could not fetch working weights.",
+    );
+  }
+}
+
+export async function updateWorkingWeight(
+  input: UpdateWorkingWeightInput,
+): Promise<ActionResult<WorkingWeightView[]>> {
+  try {
+    const supabase = await createClient();
+    const user = await getUser(supabase);
+    const enrollment = await requireActiveEnrollment(supabase, user.id);
+    const nextLoad = Math.max(0, Number(input.nextLoad) || 0);
+    const failures = Math.max(0, Math.trunc(Number(input.failures) || 0));
+    const { data: rule, error: ruleError } = await supabase
+      .from("program_exercises")
+      .select("exercise_id")
+      .eq("program_id", enrollment.program_id)
+      .eq("exercise_id", input.exerciseId)
+      .maybeSingle<{ exercise_id: string }>();
+
+    if (ruleError) {
+      throw ruleError;
+    }
+
+    if (!rule) {
+      return failure("That exercise is not part of the active program.");
+    }
+
+    const { data: existing, error: existingError } = await supabase
+      .from("exercise_training_states")
+      .select("id, unit")
+      .eq("program_enrollment_id", enrollment.id)
+      .eq("exercise_id", input.exerciseId)
+      .maybeSingle<{ id: string; unit: LoadUnit }>();
+
+    if (existingError) {
+      throw existingError;
+    }
+
+    if (existing) {
+      const { error: updateError } = await supabase
+        .from("exercise_training_states")
+        .update({
+          current_load: nextLoad,
+          consecutive_failures: failures,
+        })
+        .eq("id", existing.id);
+
+      if (updateError) {
+        throw updateError;
+      }
+    } else {
+      const { error: insertError } = await supabase
+        .from("exercise_training_states")
+        .insert({
+          user_id: user.id,
+          program_enrollment_id: enrollment.id,
+          exercise_id: input.exerciseId,
+          current_load: nextLoad,
+          unit: "kg",
+          consecutive_failures: failures,
+        });
+
+      if (insertError) {
+        throw insertError;
+      }
+    }
+
+    revalidatePath("/dashboard");
+    return fetchWorkingWeights();
+  } catch (error) {
+    return actionFailure(
+      error,
+      "workout.weights.update.failed",
+      "updateWorkingWeight",
+      "Could not save working weight.",
+      { exerciseId: input.exerciseId },
+    );
   }
 }
 

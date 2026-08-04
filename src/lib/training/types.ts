@@ -52,6 +52,24 @@ export type UserSettingsInput = {
   unitSystem?: "metric" | "imperial";
 };
 
+export type WorkingWeightView = {
+  exerciseId: string;
+  exerciseName: string;
+  currentLoad: number;
+  nextLoad: number;
+  unit: LoadUnit;
+  streak: number;
+  failures: number;
+  lastCompletedAt: string | null;
+  lastOutcome: "success" | "failure" | "none";
+};
+
+export type UpdateWorkingWeightInput = {
+  exerciseId: string;
+  nextLoad: number;
+  failures: number;
+};
+
 export type AssistanceExerciseView = {
   id: string;
   name: string;

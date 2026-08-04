@@ -5,6 +5,7 @@ import {
   fetchChartData,
   fetchHistory,
   fetchOpenWorkout,
+  fetchWorkingWeights,
 } from "@/app/workouts/actions";
 import { TrainingApp } from "@/app/dashboard/training-app";
 import { createClient } from "@/lib/supabase/server";
@@ -31,6 +32,7 @@ export default async function DashboardPage() {
     historyResult,
     chartResult,
     assistanceResult,
+    workingWeightsResult,
   ] =
     await Promise.all([
       fetchOpenWorkout(),
@@ -38,6 +40,7 @@ export default async function DashboardPage() {
       fetchHistory(20),
       fetchChartData(),
       fetchAssistanceLibrary(),
+      fetchWorkingWeights(),
     ]);
   const history = historyResult.ok ? historyResult.data : [];
   const errors = [
@@ -46,6 +49,7 @@ export default async function DashboardPage() {
     historyResult.ok ? null : historyResult.error,
     chartResult.ok ? null : chartResult.error,
     assistanceResult.ok ? null : assistanceResult.error,
+    workingWeightsResult.ok ? null : workingWeightsResult.error,
   ].filter((error): error is string => Boolean(error));
   const workoutsForDataPanel = history.map((workout) => ({
     id: workout.id,
@@ -67,6 +71,7 @@ export default async function DashboardPage() {
       nextWorkout={nextWorkoutResult.ok ? nextWorkoutResult.data : null}
       history={history}
       chartData={chartResult.ok ? chartResult.data : []}
+      workingWeights={workingWeightsResult.ok ? workingWeightsResult.data : []}
       assistanceLibrary={
         assistanceResult.ok
           ? assistanceResult.data

@@ -1004,6 +1004,97 @@ button.danger {
   gap: 16px;
 }
 
+.weights-page {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 20px;
+  display: grid;
+  gap: 18px;
+}
+
+.weights-title h2 {
+  margin: 4px 0 0;
+  font-size: 30px;
+  line-height: 1.05;
+}
+
+.working-weight-list {
+  display: grid;
+  gap: 12px;
+}
+
+.working-weight-card {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(0, 1.35fr);
+  gap: 18px;
+  align-items: end;
+  border: 1px solid #d8d0c2;
+  background: #fffdf8;
+  padding: 14px;
+}
+
+.working-weight-summary {
+  display: grid;
+  align-self: stretch;
+  align-content: space-between;
+  gap: 18px;
+}
+
+.working-weight-summary h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.working-weight-summary p {
+  margin: 0;
+  color: #5f5b53;
+  font-size: 13px;
+}
+
+.working-weight-summary strong {
+  color: #8a2d30;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+.working-weight-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.working-weight-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(96px, 1fr));
+  gap: 8px;
+}
+
+.working-weight-fields label {
+  gap: 4px;
+  color: #5f5b53;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.working-weight-fields input {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+}
+
+.working-weight-fields input:read-only {
+  background: #faf6ed;
+  color: #5f5b53;
+}
+
+.working-weight-controls button {
+  min-height: 34px;
+  border-color: #8a2d30;
+  background: #8a2d30;
+  padding: 0 18px;
+}
+
 .assist-page {
   max-width: 1120px;
   margin: 0 auto;
@@ -1285,6 +1376,9 @@ button.danger {
   .workout-assistance-panel,
   .workout-assistance-actions,
   .workout-assistance-card-head,
+  .working-weight-card,
+  .working-weight-controls,
+  .working-weight-fields,
   .tracker-session-card,
   .tracker-exercise-head,
   .tracker-summary-strip,
