@@ -9,6 +9,7 @@ import {
   importWorkoutJson,
   type UserDataExport,
 } from "@/app/data/actions";
+import type { AssistanceExerciseView } from "@/lib/training/types";
 
 type WorkoutSummary = {
   id: string;
@@ -21,6 +22,7 @@ type WorkoutSummary = {
 
 type DataOwnershipPanelProps = {
   workouts: WorkoutSummary[];
+  assistanceExercises: AssistanceExerciseView[];
 };
 
 const workoutPresets = {
@@ -35,6 +37,8 @@ const liftOptions = [
   "Overhead Press",
   "Deadlift",
 ];
+
+const mainLiftSet = new Set(liftOptions);
 
 function downloadExport(data: UserDataExport) {
   const blob = new Blob([JSON.stringify(data, null, 2)], {
@@ -61,11 +65,18 @@ function formatDate(value: string | null) {
   }).format(new Date(value));
 }
 
-export function DataOwnershipPanel({ workouts }: DataOwnershipPanelProps) {
+export function DataOwnershipPanel({
+  workouts,
+  assistanceExercises,
+}: DataOwnershipPanelProps) {
   const [message, setMessage] = useState<string | null>(null);
   const [manualTemplate, setManualTemplate] = useState<"a" | "b" | "custom">("a");
   const [manualLifts, setManualLifts] = useState(workoutPresets.a);
   const [isPending, startTransition] = useTransition();
+  const assistanceLiftOptions = assistanceExercises
+    .map((exercise) => exercise.name)
+    .filter((name) => !mainLiftSet.has(name))
+    .sort((left, right) => left.localeCompare(right));
 
   function runExport() {
     setMessage(null);
@@ -358,11 +369,22 @@ export function DataOwnershipPanel({ workouts }: DataOwnershipPanelProps) {
                   value={lift}
                   onChange={(event) => updateManualLift(index, event.currentTarget.value)}
                 >
-                  {liftOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
+                  <optgroup label="StrongLifts">
+                    {liftOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </optgroup>
+                  {assistanceLiftOptions.length ? (
+                    <optgroup label="Assistance">
+                      {assistanceLiftOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ) : null}
                 </select>
               </label>
               <label>

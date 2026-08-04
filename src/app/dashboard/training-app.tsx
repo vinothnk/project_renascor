@@ -1800,7 +1800,10 @@ export function TrainingApp(props: TrainingAppProps) {
               </label>
               <button disabled={isPending}>Save units</button>
             </form>
-            <DataOwnershipPanel workouts={props.workoutsForDataPanel} />
+            <DataOwnershipPanel
+              assistanceExercises={assistanceLibrary.exercises}
+              workouts={props.workoutsForDataPanel}
+            />
           </section>
         ) : null}
       </div>
