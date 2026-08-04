@@ -26,8 +26,8 @@ type DataOwnershipPanelProps = {
 };
 
 const workoutPresets = {
-  a: ["Squat", "Bench Press", "Barbell Row"],
-  b: ["Squat", "Overhead Press", "Deadlift"],
+  a: ["Squat", "Bench Press", "Barbell Row", "", ""],
+  b: ["Squat", "Overhead Press", "Deadlift", "", ""],
 };
 
 const liftOptions = [
@@ -63,6 +63,29 @@ function formatDate(value: string | null) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function defaultLoadForLift(lift: string, index: number) {
+  if (!lift) return "";
+  if (index === 2 && lift === "Deadlift") return 40;
+  return mainLiftSet.has(lift) ? 20 : 0;
+}
+
+function defaultSetsForLift(lift: string) {
+  if (!lift) return "";
+  if (lift === "Deadlift") return 1;
+  return mainLiftSet.has(lift) ? 5 : 3;
+}
+
+function defaultRepsForLift(lift: string) {
+  if (!lift) return "";
+  return mainLiftSet.has(lift) ? 5 : 10;
+}
+
+function completedPlaceholderForLift(lift: string) {
+  if (!lift) return "Optional";
+  if (lift === "Deadlift") return "5";
+  return mainLiftSet.has(lift) ? "5,5,5,5,5" : "10,10,10";
 }
 
 export function DataOwnershipPanel({
@@ -181,7 +204,7 @@ export function DataOwnershipPanel({
           })),
         };
       })
-      .filter((exercise) => exercise.exerciseName && exercise.load >= 0);
+      .filter((exercise) => exercise.exerciseName.trim() && exercise.load >= 0);
 
     if (!date) {
       setMessage("Choose the workout date before adding it.");
@@ -369,6 +392,9 @@ export function DataOwnershipPanel({
                   value={lift}
                   onChange={(event) => updateManualLift(index, event.currentTarget.value)}
                 >
+                  <option value="">
+                    {index >= 3 ? "Select assistance" : "Select lift"}
+                  </option>
                   <optgroup label="StrongLifts">
                     {liftOptions.map((option) => (
                       <option key={option} value={option}>
@@ -394,8 +420,8 @@ export function DataOwnershipPanel({
                   type="number"
                   min="0"
                   step="0.5"
-                  defaultValue={index === 2 && lift === "Deadlift" ? 40 : 20}
-                  required
+                  defaultValue={defaultLoadForLift(lift, index)}
+                  required={Boolean(lift)}
                 />
               </label>
               <label>
@@ -405,8 +431,8 @@ export function DataOwnershipPanel({
                   type="number"
                   min="1"
                   step="1"
-                  defaultValue={lift === "Deadlift" ? 1 : 5}
-                  required
+                  defaultValue={defaultSetsForLift(lift)}
+                  required={Boolean(lift)}
                 />
               </label>
               <label>
@@ -416,15 +442,15 @@ export function DataOwnershipPanel({
                   type="number"
                   min="1"
                   step="1"
-                  defaultValue="5"
-                  required
+                  defaultValue={defaultRepsForLift(lift)}
+                  required={Boolean(lift)}
                 />
               </label>
               <label>
                 Completed reps
                 <input
                   name={`completed-${index}`}
-                  placeholder={lift === "Deadlift" ? "5" : "5,5,5,5,5"}
+                  placeholder={completedPlaceholderForLift(lift)}
                 />
               </label>
             </div>
